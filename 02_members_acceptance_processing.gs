@@ -36,106 +36,57 @@ function members_processAcceptanceReplies() {
   const futureIdx = getMembersHeaderIndexMap_(futureHeaders);
   const futureValues = futureSheet.getRange(2, 1, futureLastRow - 1, futureLastCol).getValues();
 
-  const query = `subject:"${SETTINGS.inviteEmail.subject}" newer_than:30d`;
-  const threads = GmailApp.search(query, 0, 100);
-
-  threads.forEach(thread => {
-    const msgs = thread.getMessages();
-    if (!msgs.length) return;
-
-    const lastMsg = msgs[msgs.length - 1];
-    const from = String(lastMsg.getFrom() || "");
-    const fromEmail = members_extractEmail_(from);
-    if (!fromEmail) return;
-
-    const body = `${lastMsg.getPlainBody() || ""}\n${lastMsg.getBody() || ""}`;
-    if (!members_hasAcceptanceText_(body)) return;
-
-    const futureRowIndex = members_findFutureRowByEmail_(futureValues, futureIdx, fromEmail);
-    if (futureRowIndex === -1) return;
-
-    const absoluteRow = futureRowIndex + 2;
+  for (let i = 0; i < futureValues.length; i++) {
+    const absoluteRow = i + 2;
     const row = futureSheet.getRange(absoluteRow, 1, 1, futureLastCol).getValues()[0];
 
-    const currentProcessStatus = futureIdx.processStatus >= 0
+    const processStatus = futureIdx.processStatus >= 0
       ? String(row[futureIdx.processStatus] || "").trim()
       : "";
 
-    // evita reintegrar alguém já integrado
-    if (normalizeMembersText_(currentProcessStatus) === normalizeMembersText_(SETTINGS.values.integrated)) return;
-
-    const acceptedAt = new Date();
-    const entrySemester = members_getEntrySemesterFromAcceptanceDate_(acceptedAt);
-
-    // Atualiza linha em MEMBERS_FUTURO
-    if (futureIdx.repliedAt >= 0) {
-      futureSheet.getRange(absoluteRow, futureIdx.repliedAt + 1).setValue(acceptedAt);
-    }
-    if (futureIdx.processStatus >= 0) {
-      futureSheet.getRange(absoluteRow, futureIdx.processStatus + 1).setValue(SETTINGS.values.accepted);
-    }
-    if (futureIdx.entrySemester >= 0) {
-      futureSheet.getRange(absoluteRow, futureIdx.entrySemester + 1).setValue(entrySemester);
+    if (
+      normalizeMembersText_(processStatus) === normalizeMembersText_(SETTINGS.values.integrated) ||
+      normalizeMembersText_(processStatus) === normalizeMembersText_(SETTINGS.values.refused)
+    ) {
+      continue;
     }
 
-    // Prepara cópia para MEMBERS_ATUAIS
-    const rga = futureIdx.rga >= 0 ? String(row[futureIdx.rga] || "").trim() : "";
+    const threadId = futureIdx.threadId >= 0
+      ? String(row[futureIdx.threadId] || "").trim()
+      : "";
 
-    // Se já estiver integrado, não faz nada
-    if (normalizeMembersText_(currentProcessStatus) === normalizeMembersText_(SETTINGS.values.integrated)) {
-    return;
+    if (!threadId) continue;
+
+    let thread;
+    try {
+      thread = GmailApp.getThreadById(threadId);
+    } catch (e) {
+      thread = null;
+    }
+    if (!thread) continue;
+
+    const msgs = thread.getMessages();
+    if (!msgs.length) continue;
+
+    const lastMsg = msgs[msgs.length - 1];
+    const messageId = lastMsg.getId();
+    const fromEmail = members_extractEmail_(lastMsg.getFrom() || "");
+    const rowEmail = futureIdx.email >= 0 ? String(row[futureIdx.email] || "").trim().toLowerCase() : "";
+
+    if (!fromEmail || !rowEmail || fromEmail !== rowEmail) continue;
+
+    const body = `${lastMsg.getPlainBody() || ""}\n${lastMsg.getBody() || ""}`;
+
+    if (members_hasRefusalText_(body)) {
+      const refusalReason = members_extractRefusalReason_(body);
+      members_markFutureAsRefused_(futureSheet, absoluteRow, futureIdx, messageId, refusalReason);
+      continue;
     }
 
-    // Se o RGA já existir em Membros Atuais, apenas marca corretamente a origem
-    if (rga && members_currentHasRga_(currentSheet, rga)) {
-    if (futureIdx.status >= 0) {
-        futureSheet.getRange(absoluteRow, futureIdx.status + 1).setValue(SETTINGS.values.active);
-    }
+    if (!members_hasAcceptanceText_(body)) continue;
 
-    if (futureIdx.processStatus >= 0) {
-        futureSheet.getRange(absoluteRow, futureIdx.processStatus + 1).setValue(SETTINGS.values.integrated);
-    }
-
-    if (futureIdx.notes >= 0) {
-        futureSheet.getRange(absoluteRow, futureIdx.notes + 1).setValue("Membro já existente em Membros Atuais; linha de espera marcada como integrada.");
-    }
-
-    return;
-    }
-
-    const currentLastCol = currentSheet.getLastColumn();
-    const currentHeaders = currentSheet.getRange(1, 1, 1, currentLastCol).getValues()[0].map(h => String(h || "").trim());
-
-    const newCurrentRow = members_buildCurrentRowFromFutureRow_(
-      row,
-      futureHeaders,
-      currentHeaders,
-      entrySemester
-    );
-
-    currentSheet.appendRow(newCurrentRow);
-
-    // Marca origem como integrada
-    if (futureIdx.status >= 0) {
-      futureSheet.getRange(absoluteRow, futureIdx.status + 1).setValue(SETTINGS.values.active);
-    }
-
-    if (futureIdx.processStatus >= 0) {
-      futureSheet.getRange(absoluteRow, futureIdx.processStatus + 1).setValue(SETTINGS.values.integrated);
-    }
-
-    if (futureIdx.notes >= 0) {
-      futureSheet.getRange(absoluteRow, futureIdx.notes + 1).setValue("Membro integrado em Membros Atuais.");
-    }
-
-    // Envia email final
-    const name = futureIdx.name >= 0 ? String(row[futureIdx.name] || "").trim() : "";
-    MailApp.sendEmail({
-      to: fromEmail,
-      subject: SETTINGS.finalEmail.subject,
-      htmlBody: buildMembersFinalEmailHtml_(name, SETTINGS.finalEmail.whatsappGroupLink)
-    });
-  });
+    members_integrateAcceptedFutureMember_(futureSheet, currentSheet, absoluteRow, futureHeaders, futureIdx, row, messageId);
+  }
 }
 
 /**
@@ -177,9 +128,70 @@ function members_findFutureRowByEmail_(values, idx, email) {
  * @param {string} body
  * @return {boolean}
  */
+
+/**
+ * Tenta extrair apenas a parte nova da resposta,
+ * removendo o trecho citado do email anterior.
+ *
+ * @param {string} body
+ * @return {string}
+ */
+function members_extractLatestReplyText_(body) {
+  let text = String(body || "");
+
+  // remove HTML básico
+  text = text.replace(/<br\s*\/?>/gi, "\n");
+  text = text.replace(/<\/p>/gi, "\n");
+  text = text.replace(/<[^>]*>/g, " ");
+
+  // normaliza espaços
+  text = text.replace(/\r/g, "").replace(/\u00a0/g, " ");
+
+  const lines = text.split("\n");
+  const kept = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = String(lines[i] || "").trim();
+
+    // para ao encontrar bloco citado/reencaminhado
+    if (
+      /^em .* escreveu:$/i.test(line) ||
+      /^on .* wrote:$/i.test(line) ||
+      /^>/.test(line) ||
+      /^de: /i.test(line) ||
+      /^from: /i.test(line) ||
+      /^assunto: /i.test(line) ||
+      /^subject: /i.test(line)
+    ) {
+      break;
+    }
+
+    kept.push(line);
+  }
+
+  return kept.join(" ").replace(/\s+/g, " ").trim();
+}
+
 function members_hasAcceptanceText_(body) {
-  const text = normalizeMembersText_(body);
-  return text.includes("aceito");
+  const text = normalizeMembersText_(members_extractLatestReplyText_(body));
+  return /\baceito\b/.test(text);
+}
+
+function members_hasRefusalText_(body) {
+  const text = normalizeMembersText_(members_extractLatestReplyText_(body));
+  return /\brecuso\b/.test(text) || /\bnão aceito\b/.test(text) || /\bnao aceito\b/.test(text);
+}
+
+function members_extractRefusalReason_(body) {
+  const raw = members_extractLatestReplyText_(body);
+
+  let reason = String(raw || "")
+    .replace(/^recuso[\s,:;.-]*/i, "")
+    .replace(/^não aceito[\s,:;.-]*/i, "")
+    .replace(/^nao aceito[\s,:;.-]*/i, "")
+    .trim();
+
+  return reason;
 }
 
 /**
@@ -212,4 +224,136 @@ function buildMembersFinalEmailHtml_(name, whatsappLink) {
     <p>Seja bem-vindo(a)!</p>
     <p>Atenciosamente,<br>GEAPA</p>
   `;
+}
+
+function members_markFutureAsRefused_(futureSheet, absoluteRow, futureIdx, messageId, refusalReason) {
+  const now = new Date();
+
+  const row = futureSheet.getRange(absoluteRow, 1, 1, futureSheet.getLastColumn()).getValues()[0];
+  const name = futureIdx.name >= 0 ? String(row[futureIdx.name] || "").trim() : "";
+  const email = futureIdx.email >= 0 ? String(row[futureIdx.email] || "").trim() : "";
+
+  if (futureIdx.status >= 0) {
+    futureSheet.getRange(absoluteRow, futureIdx.status + 1).setValue(SETTINGS.values.disqualified);
+  }
+
+  if (futureIdx.repliedAt >= 0) {
+    futureSheet.getRange(absoluteRow, futureIdx.repliedAt + 1).setValue(now);
+  }
+
+  if (futureIdx.processStatus >= 0) {
+    futureSheet.getRange(absoluteRow, futureIdx.processStatus + 1).setValue(SETTINGS.values.refused);
+  }
+
+  if (futureIdx.messageId >= 0 && messageId) {
+    futureSheet.getRange(absoluteRow, futureIdx.messageId + 1).setValue(messageId);
+  }
+
+  if (futureIdx.notes >= 0) {
+    const note = refusalReason
+      ? `Convite recusado pelo candidato. Motivo informado: ${refusalReason}`
+      : "Convite recusado pelo candidato.";
+    futureSheet.getRange(absoluteRow, futureIdx.notes + 1).setValue(note);
+  }
+
+  if (email) {
+    MailApp.sendEmail({
+      to: email,
+      subject: SETTINGS.refusalEmail.subject,
+      htmlBody: buildMembersRefusalEmailHtml_(name)
+    });
+  }
+}
+
+function buildMembersRefusalEmailHtml_(name) {
+  const safeName = escapeMembersHtml_(name || "candidato(a)");
+
+  return `
+    <p>Olá, <b>${safeName}</b>!</p>
+    <p>Recebemos sua resposta e confirmamos a sua recusa em ingressar no GEAPA neste processo seletivo.</p>
+    <p>Caso deseje participar futuramente, será necessário realizar inscrição e participação em um novo processo seletivo.</p>
+    <p>Agradecemos seu retorno.</p>
+    <p>Atenciosamente,<br>GEAPA</p>
+  `;
+}
+
+function members_integrateAcceptedFutureMember_(futureSheet, currentSheet, absoluteRow, futureHeaders, futureIdx, row, messageId) {
+  const currentProcessStatus = futureIdx.processStatus >= 0
+    ? String(row[futureIdx.processStatus] || "").trim()
+    : "";
+
+  if (normalizeMembersText_(currentProcessStatus) === normalizeMembersText_(SETTINGS.values.integrated)) {
+    return;
+  }
+
+  const acceptedAt = new Date();
+  const entrySemester = members_getEntrySemesterFromAcceptanceDate_(acceptedAt);
+
+  if (futureIdx.repliedAt >= 0) {
+    futureSheet.getRange(absoluteRow, futureIdx.repliedAt + 1).setValue(acceptedAt);
+  }
+  if (futureIdx.processStatus >= 0) {
+    futureSheet.getRange(absoluteRow, futureIdx.processStatus + 1).setValue(SETTINGS.values.accepted);
+  }
+  if (futureIdx.entrySemester >= 0) {
+    futureSheet.getRange(absoluteRow, futureIdx.entrySemester + 1).setValue(entrySemester);
+  }
+  if (futureIdx.messageId >= 0 && messageId) {
+    futureSheet.getRange(absoluteRow, futureIdx.messageId + 1).setValue(messageId);
+  }
+
+  const rga = futureIdx.rga >= 0 ? String(row[futureIdx.rga] || "").trim() : "";
+  if (rga && members_currentHasRga_(currentSheet, rga)) {
+    if (futureIdx.status >= 0) {
+      futureSheet.getRange(absoluteRow, futureIdx.status + 1).setValue(SETTINGS.values.active);
+    }
+    if (futureIdx.processStatus >= 0) {
+      futureSheet.getRange(absoluteRow, futureIdx.processStatus + 1).setValue(SETTINGS.values.integrated);
+    }
+    if (futureIdx.notes >= 0) {
+      futureSheet.getRange(absoluteRow, futureIdx.notes + 1).setValue("Membro já existente em Membros Atuais; linha de espera marcada como integrada.");
+    }
+    return;
+  }
+
+  const currentLastCol = currentSheet.getLastColumn();
+  const currentHeaders = currentSheet.getRange(1, 1, 1, currentLastCol).getValues()[0].map(h => String(h || "").trim());
+
+  const newCurrentRow = members_buildCurrentRowFromFutureRow_(
+    row,
+    futureHeaders,
+    currentHeaders,
+    entrySemester
+  );
+
+  const newRowIndex = currentSheet.getLastRow() + 1;
+  currentSheet.appendRow(newCurrentRow);
+
+  // grava Data integração no destino, se existir a coluna
+  const currentIdx = members_getHeaderMap_(currentHeaders);
+  const integratedAtIdx = currentIdx[String(SETTINGS.headers.integratedAt).trim().toLowerCase()];
+  if (integratedAtIdx != null && integratedAtIdx >= 0) {
+    currentSheet.getRange(newRowIndex, integratedAtIdx + 1).setValue(acceptedAt);
+  }
+
+  if (futureIdx.status >= 0) {
+    futureSheet.getRange(absoluteRow, futureIdx.status + 1).setValue(SETTINGS.values.active);
+  }
+  if (futureIdx.processStatus >= 0) {
+    futureSheet.getRange(absoluteRow, futureIdx.processStatus + 1).setValue(SETTINGS.values.integrated);
+  }
+  if (futureIdx.notes >= 0) {
+    futureSheet.getRange(absoluteRow, futureIdx.notes + 1).setValue("Membro integrado em Membros Atuais.");
+  }
+
+  const fromEmail = futureIdx.email >= 0 ? String(row[futureIdx.email] || "").trim() : "";
+  const name = futureIdx.name >= 0 ? String(row[futureIdx.name] || "").trim() : "";
+
+  if (fromEmail) {
+    MailApp.sendEmail({
+      to: fromEmail,
+      subject: SETTINGS.finalEmail.subject,
+      htmlBody: buildMembersFinalEmailHtml_(name, SETTINGS.finalEmail.whatsappGroupLink)
+    });
+  }
 }

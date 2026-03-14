@@ -82,6 +82,19 @@ function members_sendInviteByRow_(sheet, rowIndex, headers) {
     htmlBody: buildMembersInviteEmailHtml_(name)
   });
 
+  Utilities.sleep(1500);
+
+  const threads = GmailApp.search(
+    `to:${email} subject:"${SETTINGS.inviteEmail.subject}" newer_than:7d`,
+    0,
+    10
+  );
+
+  let threadId = "";
+  if (threads && threads.length) {
+    threadId = threads[0].getId();
+  }
+
   const now = new Date();
 
   if (idx.processStatus >= 0) {
@@ -90,6 +103,10 @@ function members_sendInviteByRow_(sheet, rowIndex, headers) {
 
   if (idx.sentAt >= 0) {
     sheet.getRange(rowIndex, idx.sentAt + 1).setValue(now);
+  }
+
+  if (idx.threadId >= 0 && threadId) {
+    sheet.getRange(rowIndex, idx.threadId + 1).setValue(threadId);
   }
 }
 
@@ -110,7 +127,12 @@ function buildMembersInviteEmailHtml_(name) {
     <p>Entramos em contato para confirmar se você deseja ingressar oficialmente no GEAPA.</p>
     <p>Se desejar entrar no grupo, responda este email com a palavra:</p>
     <p><b>ACEITO</b></p>
-    <p>Assim que sua resposta for processada, daremos continuidade à sua integração.</p>
+    <p>Se não desejar entrar no grupo neste momento, responda com:</p>
+    <p><b>RECUSO</b></p>
+    <p>Você pode escrever outras informações junto da resposta, se quiser.</p>
+    <p>Exemplos:</p>
+    <p><i>ACEITO, muito obrigado!</i><br><i>RECUSO, pois no momento não conseguirei participar.</i></p>
+    <p>Assim que sua resposta for processada, daremos continuidade ao procedimento correspondente.</p>
     <p>Atenciosamente,<br>GEAPA</p>
   `;
 }
@@ -133,7 +155,10 @@ function getMembersHeaderIndexMap_(headers) {
     sentAt: normalized.indexOf(normalizeMembersText_(SETTINGS.headers.sentAt)),
     repliedAt: normalized.indexOf(normalizeMembersText_(SETTINGS.headers.repliedAt)),
     notes: normalized.indexOf(normalizeMembersText_(SETTINGS.headers.notes)),
-    entrySemester: normalized.indexOf(normalizeMembersText_(SETTINGS.headers.entrySemester))
+    entrySemester: normalized.indexOf(normalizeMembersText_(SETTINGS.headers.entrySemester)),
+    threadId: normalized.indexOf(normalizeMembersText_(SETTINGS.headers.threadId)),
+    messageId: normalized.indexOf(normalizeMembersText_(SETTINGS.headers.messageId)),
+    integratedAt: normalized.indexOf(normalizeMembersText_(SETTINGS.headers.integratedAt))
   };
 }
 

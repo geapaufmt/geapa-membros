@@ -24,7 +24,10 @@ const SETTINGS = Object.freeze({
     sentAt: "Data envio convite",
     repliedAt: "Data resposta",
     notes: "Observações do processo",
-    entrySemester: "Semestre de entrada"
+    entrySemester: "Semestre de entrada",
+    threadId: "ThreadId convite",
+    messageId: "MessageId resposta",
+    integratedAt: "Data integração",
   }),
 
   values: Object.freeze({
@@ -36,7 +39,8 @@ const SETTINGS = Object.freeze({
     integrated: "Integrado",
     active: "Ativo",
     suspended: "Suspenso",
-    offboarded: "Desligado"
+    offboarded: "Desligado",
+    disqualified: "Desclassificado"
   }),
 
   inviteEmail: Object.freeze({
@@ -46,7 +50,11 @@ const SETTINGS = Object.freeze({
   finalEmail: Object.freeze({
     subject: "Sua entrada no GEAPA foi confirmada",
     whatsappGroupLink: "https://chat.whatsapp.com/E0mtWYO04jAJqWboob1jDu?mode=gi_t"
-  })
+  }),
+
+  refusalEmail: Object.freeze({
+    subject: "Confirmação de recusa de ingresso no GEAPA"
+  }),
 });
 
 function members_assertCore_() {
