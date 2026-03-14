@@ -70,6 +70,15 @@ function members_processAcceptanceReplies() {
 
     const lastMsg = msgs[msgs.length - 1];
     const messageId = lastMsg.getId();
+
+    const savedMessageId = futureIdx.messageId >= 0
+    ? String(row[futureIdx.messageId] || "").trim()
+    : "";
+
+    if (savedMessageId && savedMessageId === String(messageId)) {
+    continue;
+    }
+
     const fromEmail = members_extractEmail_(lastMsg.getFrom() || "");
     const rowEmail = futureIdx.email >= 0 ? String(row[futureIdx.email] || "").trim().toLowerCase() : "";
 
