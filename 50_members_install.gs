@@ -6,7 +6,8 @@
 
 const MEMBERS_TRIGGERS = Object.freeze([
   { fn: "members_onEditProcessStatus", type: "onEditSpreadsheet" },
-  { fn: "members_processAcceptanceReplies", type: "timeMinutes", minutes: 5 }
+  { fn: "members_processAcceptanceReplies", type: "timeMinutes", minutes: 5 },
+  { fn: "members_processInvitationTimeouts", type: "timeHours", hours: 12 }
 ]);
 
 function members_installTriggers() {
@@ -32,6 +33,13 @@ function members_installTriggers() {
       ScriptApp.newTrigger(t.fn)
         .timeBased()
         .everyMinutes(t.minutes)
+        .create();
+    }
+
+    if (t.type === "timeHours") {
+      ScriptApp.newTrigger(t.fn)
+        .timeBased()
+        .everyHours(t.hours)
         .create();
     }
   });

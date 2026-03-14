@@ -357,3 +357,84 @@ function members_integrateAcceptedFutureMember_(futureSheet, currentSheet, absol
     });
   }
 }
+
+function members_processInvitationTimeouts() {
+  members_assertCore_();
+
+  const futureSheet = GEAPA_CORE.coreGetSheetByKey(SETTINGS.futureKey);
+  if (!futureSheet) {
+    throw new Error("Não foi possível localizar MEMBERS_FUTURO.");
+  }
+
+  const lastRow = futureSheet.getLastRow();
+  const lastCol = futureSheet.getLastColumn();
+  if (lastRow < 2) return;
+
+  const headers = futureSheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || "").trim());
+  const idx = getMembersHeaderIndexMap_(headers);
+  const values = futureSheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+
+  const now = new Date();
+  const msLimit = SETTINGS.timeoutDays * 24 * 60 * 60 * 1000;
+
+  for (let i = 0; i < values.length; i++) {
+    const absoluteRow = i + 2;
+    const row = futureSheet.getRange(absoluteRow, 1, 1, lastCol).getValues()[0];
+
+    const status = idx.status >= 0 ? String(row[idx.status] || "").trim() : "";
+    const processStatus = idx.processStatus >= 0 ? String(row[idx.processStatus] || "").trim() : "";
+    const repliedAt = idx.repliedAt >= 0 ? row[idx.repliedAt] : "";
+    const sentAt = idx.sentAt >= 0 ? row[idx.sentAt] : "";
+    const email = idx.email >= 0 ? String(row[idx.email] || "").trim() : "";
+    const name = idx.name >= 0 ? String(row[idx.name] || "").trim() : "";
+
+    // Só trata quem está aguardando resposta após email enviado
+    if (normalizeMembersText_(processStatus) !== normalizeMembersText_(SETTINGS.values.emailed)) {
+      continue;
+    }
+
+    // Se já respondeu, ignora
+    if (repliedAt) continue;
+    if (!sentAt) continue;
+
+    const sentDate = new Date(sentAt);
+    if (isNaN(sentDate.getTime())) continue;
+
+    const elapsed = now.getTime() - sentDate.getTime();
+    if (elapsed < msLimit) continue;
+
+    if (idx.status >= 0) {
+      futureSheet.getRange(absoluteRow, idx.status + 1).setValue(SETTINGS.values.disqualified);
+    }
+
+    if (idx.processStatus >= 0) {
+      futureSheet.getRange(absoluteRow, idx.processStatus + 1).setValue(SETTINGS.values.expired);
+    }
+
+    if (idx.notes >= 0) {
+      futureSheet.getRange(absoluteRow, idx.notes + 1).setValue(
+        `Prazo de ${SETTINGS.timeoutDays} dias expirado sem resposta ao convite.`
+      );
+    }
+
+    if (email) {
+      MailApp.sendEmail({
+        to: email,
+        subject: SETTINGS.timeoutEmail.subject,
+        htmlBody: buildMembersTimeoutEmailHtml_(name)
+      });
+    }
+  }
+}
+
+function buildMembersTimeoutEmailHtml_(name) {
+  const safeName = escapeMembersHtml_(name || "candidato(a)");
+
+  return `
+    <p>Olá, <b>${safeName}</b>!</p>
+    <p>O prazo para resposta ao convite de ingresso no GEAPA foi encerrado.</p>
+    <p>Como não houve manifestação dentro do período de ${SETTINGS.timeoutDays} dias, seu convite foi finalizado e sua participação neste processo foi encerrada.</p>
+    <p>Caso deseje ingressar futuramente, será necessário participar de um novo processo seletivo.</p>
+    <p>Atenciosamente,<br>GEAPA</p>
+  `;
+}

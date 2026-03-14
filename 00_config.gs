@@ -40,8 +40,12 @@ const SETTINGS = Object.freeze({
     active: "Ativo",
     suspended: "Suspenso",
     offboarded: "Desligado",
+    disqualified: "Desclassificado",
+    expired: "Prazo expirado",
     disqualified: "Desclassificado"
   }),
+
+timeoutDays: 7,
 
   inviteEmail: Object.freeze({
     subject: "Confirmação de interesse em ingressar no GEAPA"
@@ -54,6 +58,10 @@ const SETTINGS = Object.freeze({
 
   refusalEmail: Object.freeze({
     subject: "Confirmação de recusa de ingresso no GEAPA"
+  }),
+  
+  timeoutEmail: Object.freeze({
+    subject: "Prazo encerrado para ingresso no GEAPA"
   }),
 });
 
