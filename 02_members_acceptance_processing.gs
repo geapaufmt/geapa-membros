@@ -338,6 +338,9 @@ function members_integrateAcceptedFutureMember_(futureSheet, currentSheet, absol
   const newRowIndex = currentSheet.getLastRow() + 1;
   currentSheet.appendRow(newCurrentRow);
 
+  // atualiza campos derivados logo após a integração
+  GEAPA_CORE.coreSyncMembersCurrentDerivedFields();
+
   // grava Data integração no destino, se existir a coluna
   const currentIdx = members_getHeaderMap_(currentHeaders);
   const integratedAtIdx = currentIdx[String(SETTINGS.headers.integratedAt).trim().toLowerCase()];
