@@ -7,7 +7,8 @@
 const MEMBERS_TRIGGERS = Object.freeze([
   { fn: "members_onEditProcessStatus", type: "onEditSpreadsheet" },
   { fn: "members_processAcceptanceReplies", type: "timeMinutes", minutes: 5 },
-  { fn: "members_processInvitationTimeouts", type: "timeHours", hours: 12 }
+  { fn: "members_processInvitationTimeouts", type: "timeHours", hours: 12 },
+  { fn: "members_importFromSeletivoResults", type: "timeMinutes", minutes: 10 }
 ]);
 
 function members_installTriggers() {

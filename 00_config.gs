@@ -31,7 +31,7 @@ const SETTINGS = Object.freeze({
   }),
 
   values: Object.freeze({
-    waiting: "Em espera",
+    waiting: "Em Espera",
     sendEmail: "Enviar e-mail",
     emailed: "E-mail enviado",
     accepted: "Aceitou",
@@ -43,6 +43,17 @@ const SETTINGS = Object.freeze({
     disqualified: "Desclassificado",
     expired: "Prazo expirado",
     disqualified: "Desclassificado"
+  }),
+
+  seletivo: Object.freeze({
+    avaliacaoKey: "SELETIVO_AVALIACAO",
+    inscricaoKey: "SELETIVO_INSCRICAO",
+    resultadoAprovadoImediato: "Aprovado imediato",
+    resultadoAprovadoEspera: "Aprovado em espera",
+    processadoHeader: "Processado integração",
+    processedAtHeader: "Data integração sistema",
+    waitingProcessStatus: "Aguardando vaga",
+    waiting: "Em Espera"
   }),
 
 timeoutDays: 7,
