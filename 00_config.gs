@@ -16,6 +16,11 @@ const SETTINGS = Object.freeze({
   currentKey: "MEMBERS_ATUAIS",
   histKey: "MEMBERS_HIST",
 
+  vigenciaKeys: Object.freeze({
+    semestres: "VIGENCIA_SEMESTRES",
+    membrosDiretoria: "VIGENCIA_MEMBROS_DIRETORIAS"
+  }),
+
   headers: Object.freeze({
     name: "Nome",
     email: "EMAIL",
@@ -28,6 +33,17 @@ const SETTINGS = Object.freeze({
     threadId: "ThreadId convite",
     messageId: "MessageId resposta",
     integratedAt: "Data integração",
+  }),
+
+  histHeaders: Object.freeze({
+    finalStatus: "Status final",
+    requestAt: "Data de solicitação",
+    exitSemester: "Semestre de saída",
+    semesterCount: "N° de semestres no grupo",
+    approvedAt: "Data de homologação",
+    reason: "Motivo",
+    wasDirector: "Foi membro da diretoria?",
+    internalNote: "Observação interna"
   }),
 
   values: Object.freeze({
@@ -43,6 +59,15 @@ const SETTINGS = Object.freeze({
     disqualified: "Desclassificado",
     expired: "Prazo expirado",
     disqualified: "Desclassificado"
+  }),
+
+  offboarding: Object.freeze({
+    requestType: "Desligamento",
+    immediate: "Imediatamente",
+    approved: "DEFERIDO",
+    yes: "SIM",
+    finalStatus: "Desligado",
+    histStatus: "Desligado homologado"
   }),
 
   seletivo: Object.freeze({
