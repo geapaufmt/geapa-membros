@@ -20,12 +20,7 @@ function members_sheetByKey_(key) {
 function members_getHeaderMap1Based_(sheet) {
   const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
     .map(h => String(h || "").trim());
-
-  const map = {};
-  headers.forEach((h, i) => {
-    if (h) map[h] = i + 1;
-  });
-  return map;
+  return members_buildHeaderMap_(headers, { normalize: false, oneBased: true });
 }
 
 function members_rowToObject_(headers, row) {
@@ -39,7 +34,7 @@ function members_onlyDigits_(value) {
 }
 
 function members_normalizeEmail_(value) {
-  return String(value || "").trim().toLowerCase();
+  return members_normalizeEmailCompat_(value);
 }
 
 function members_formatCpf_(value) {

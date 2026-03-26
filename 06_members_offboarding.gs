@@ -303,14 +303,6 @@ function members_hasDirectorHistoryByRga_(rga) {
   return rows.some(row => members_normalizeKey_(row[rgaIdx]) === normalizedRga);
 }
 
-function members_getSemesterFromDate_(value) {
-  const dt = members_toDate_(value);
-  if (!dt) return "";
-
-  const semesterObj = GEAPA_CORE.coreGetSemesterForDate(dt);
-  return semesterObj && semesterObj.id ? semesterObj.id : "";
-}
-
 function members_pickValue_(row, map, candidates) {
   for (let i = 0; i < candidates.length; i++) {
     const idx = map[String(candidates[i] || "").trim().toLowerCase()];
@@ -320,12 +312,7 @@ function members_pickValue_(row, map, candidates) {
 }
 
 function members_normalizeKey_(value) {
-  return String(value == null ? "" : value)
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toUpperCase();
+  return members_normalizeKeyCompat_(value);
 }
 
 function members_toDate_(value) {
@@ -372,8 +359,5 @@ function members_normalizeSemesterText_(value) {
 function members_getSemesterFromDate_(value) {
   const dt = members_toDate_(value);
   if (!dt) return "";
-
-  const semesterObj = GEAPA_CORE.coreGetSemesterForDate(dt);
-  const semesterId = semesterObj && semesterObj.id ? String(semesterObj.id).trim() : "";
-  return members_forcePlainText_(semesterId);
+  return members_getSemesterId_(dt, { plainText: true });
 }

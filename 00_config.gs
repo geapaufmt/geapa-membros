@@ -58,8 +58,7 @@ const SETTINGS = Object.freeze({
     suspended: "Suspenso",
     offboarded: "Desligado",
     disqualified: "Desclassificado",
-    expired: "Prazo expirado",
-    disqualified: "Desclassificado"
+    expired: "Prazo expirado"
   }),
 
   offboarding: Object.freeze({

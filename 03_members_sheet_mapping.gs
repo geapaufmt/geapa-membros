@@ -11,9 +11,27 @@
  * @return {Object<string, number>}
  */
 function members_getHeaderMap_(headers) {
+  return members_buildHeaderMap_(headers, { normalize: true, oneBased: false });
+}
+
+/**
+ * Constrói mapa de cabeçalho com opções de normalização e indexação.
+ *
+ * @param {string[]} headers
+ * @param {{normalize?: boolean, oneBased?: boolean}=} opts
+ * @return {Object<string, number>}
+ */
+function members_buildHeaderMap_(headers, opts) {
+  opts = opts || {};
+  const normalize = opts.normalize !== false;
+  const oneBased = opts.oneBased === true;
+
   const map = {};
   headers.forEach((h, i) => {
-    map[String(h || "").trim().toLowerCase()] = i;
+    const raw = String(h || "").trim();
+    if (!raw) return;
+    const key = normalize ? raw.toLowerCase() : raw;
+    map[key] = oneBased ? i + 1 : i;
   });
   return map;
 }

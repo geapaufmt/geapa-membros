@@ -76,24 +76,13 @@ function members_sendInviteByRow_(sheet, rowIndex, headers) {
     return;
   }
 
-  MailApp.sendEmail({
+  const trackedSend = members_sendTrackedEmail_({
     to: email,
     subject: SETTINGS.inviteEmail.subject,
-    htmlBody: buildMembersInviteEmailHtml_(name)
+    htmlBody: buildMembersInviteEmailHtml_(name),
+    newerThanDays: SETTINGS.timeoutDays
   });
-
-  Utilities.sleep(1500);
-
-  const threads = GmailApp.search(
-    `to:${email} subject:"${SETTINGS.inviteEmail.subject}" newer_than:7d`,
-    0,
-    10
-  );
-
-  let threadId = "";
-  if (threads && threads.length) {
-    threadId = threads[0].getId();
-  }
+  const threadId = String((trackedSend && trackedSend.threadId) || "").trim();
 
   const now = new Date();
 
@@ -144,21 +133,25 @@ function buildMembersInviteEmailHtml_(name) {
  * @return {Object}
  */
 function getMembersHeaderIndexMap_(headers) {
-  const normalized = headers.map(normalizeMembersText_);
+  const normalizedMap = members_buildHeaderMap_(headers, { normalize: true, oneBased: false });
+  const find = function(label) {
+    const key = normalizeMembersText_(label);
+    return Object.prototype.hasOwnProperty.call(normalizedMap, key) ? normalizedMap[key] : -1;
+  };
 
   return {
-    name: normalized.indexOf(normalizeMembersText_(SETTINGS.headers.name)),
-    email: normalized.indexOf(normalizeMembersText_(SETTINGS.headers.email)),
-    rga: normalized.indexOf("rga"),
-    status: normalized.indexOf(normalizeMembersText_(SETTINGS.headers.status)),
-    processStatus: normalized.indexOf(normalizeMembersText_(SETTINGS.headers.processStatus)),
-    sentAt: normalized.indexOf(normalizeMembersText_(SETTINGS.headers.sentAt)),
-    repliedAt: normalized.indexOf(normalizeMembersText_(SETTINGS.headers.repliedAt)),
-    notes: normalized.indexOf(normalizeMembersText_(SETTINGS.headers.notes)),
-    entrySemester: normalized.indexOf(normalizeMembersText_(SETTINGS.headers.entrySemester)),
-    threadId: normalized.indexOf(normalizeMembersText_(SETTINGS.headers.threadId)),
-    messageId: normalized.indexOf(normalizeMembersText_(SETTINGS.headers.messageId)),
-    integratedAt: normalized.indexOf(normalizeMembersText_(SETTINGS.headers.integratedAt))
+    name: find(SETTINGS.headers.name),
+    email: find(SETTINGS.headers.email),
+    rga: find("rga"),
+    status: find(SETTINGS.headers.status),
+    processStatus: find(SETTINGS.headers.processStatus),
+    sentAt: find(SETTINGS.headers.sentAt),
+    repliedAt: find(SETTINGS.headers.repliedAt),
+    notes: find(SETTINGS.headers.notes),
+    entrySemester: find(SETTINGS.headers.entrySemester),
+    threadId: find(SETTINGS.headers.threadId),
+    messageId: find(SETTINGS.headers.messageId),
+    integratedAt: find(SETTINGS.headers.integratedAt)
   };
 }
 
