@@ -18,6 +18,7 @@ const SETTINGS = Object.freeze({
 
   vigenciaKeys: Object.freeze({
     semestres: "VIGENCIA_SEMESTRES",
+    diretorias: "VIGENCIA_DIRETORIAS",
     membrosDiretoria: "VIGENCIA_MEMBROS_DIRETORIAS"
   }),
 
@@ -80,6 +81,53 @@ const SETTINGS = Object.freeze({
     waitingProcessStatus: "Aguardando vaga",
     waiting: "Em Espera"
   }),
+
+  election: Object.freeze({
+  chapaKey: "ELEICOES_CHAPAS_INSCRICAO",
+
+  electedEmailSubject: "Chapa eleita - início da transição da diretoria GEAPA",
+
+  statusDeferida: "DEFERIDA",
+  statusIndeferida: "INDEFERIDA",
+  statusEleita: "ELEITA",
+
+  emailSentYes: "SIM",
+  emailSentNo: "NÃO",
+  registeredYes: "SIM",
+  registeredNo: "NÃO",
+
+  // ~ 3 semestres civis
+  maxDiretoriaTotalDays: 548,
+
+  emailApprovedSubject: "Inscrição de chapa deferida - GEAPA",
+  emailRejectedSubject: "Inscrição de chapa indeferida - GEAPA",
+
+  chapaHeaders: Object.freeze({
+    submittedAt: "Carimbo de data/hora",
+    submitterEmail: "Endereço de e-mail",
+    presidentName: "Nome do candidato a Presidente",
+    presidentRga: "RGA do candidato a Presidente",
+    viceName: "Nome do candidato a Vice-Presidente",
+    viceRga: "RGA do candidato a Vice-presidente",
+    proposal: "Proposta Básica de Gestão",
+
+    presidentStatus: "Status Presidente",
+    presidentReasons: "Motivos Presidente",
+    viceStatus: "Status Vice",
+    viceReasons: "Motivos Vice",
+    chapaStatus: "Status da Chapa",
+    chapaReasons: "Motivos da Chapa",
+    automaticOpinion: "Parecer automático",
+    analyzedAt: "Data/Hora da análise",
+    finalResult: "Resultado final",
+    finalResultAt: "Data/Hora resultado final",
+    emailSent: "E-mail resultado enviado?",
+    boardRegistered: "Diretoria registrada?",
+    internalNote: "Observação da diretoria",
+    electedEmailSent: "E-mail chapa eleita enviado?",
+    electedEmailSentAt: "Data/Hora e-mail chapa eleita"
+  })
+}),
 
 timeoutDays: 7,
 
