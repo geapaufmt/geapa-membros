@@ -11,11 +11,18 @@
  * @return {Object<string, number>}
  */
 function members_getHeaderMap_(headers) {
-  const map = {};
-  headers.forEach((h, i) => {
-    map[String(h || "").trim().toLowerCase()] = i;
-  });
-  return map;
+  return members_buildHeaderMap_(headers, { normalize: true, oneBased: false });
+}
+
+/**
+ * Constrói mapa de cabeçalho com opções de normalização e indexação.
+ *
+ * @param {string[]} headers
+ * @param {{normalize?: boolean, oneBased?: boolean}=} opts
+ * @return {Object<string, number>}
+ */
+function members_buildHeaderMap_(headers, opts) {
+  return members_buildHeaderMapCompat_(headers, opts || {});
 }
 
 /**
@@ -86,15 +93,10 @@ function members_buildCurrentRowFromFutureRow_(sourceRow, sourceHeaders, targetH
  * @return {boolean}
  */
 function members_currentHasRga_(sheet, rga) {
-  const lastRow = sheet.getLastRow();
-  const lastCol = sheet.getLastColumn();
-  if (lastRow < 2 || !rga) return false;
+  if (!rga) return false;
 
-  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || "").trim());
-  const map = members_getHeaderMap_(headers);
-  const rgaIdx = map["rga"];
-  if (rgaIdx == null || rgaIdx < 0) return false;
+  const records = members_readSheetRecordsCompat_(sheet);
+  const target = String(rga || "").trim();
 
-  const values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
-  return values.some(row => String(row[rgaIdx] || "").trim() === String(rga || "").trim());
+  return records.some(record => String(record["RGA"] || "").trim() === target);
 }

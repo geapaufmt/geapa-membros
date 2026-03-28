@@ -183,7 +183,7 @@ function members_analyzeChapaRow_(sheet, rowIndex, headers, ctx) {
   let chapaStatus = SETTINGS.election.statusDeferida;
   const chapaReasons = [];
 
-  if (presidentRga && viceRga && normalizeMembersDigits_(presidentRga) === normalizeMembersDigits_(viceRga)) {
+  if (presidentRga && viceRga && members_normalizeDigits_(presidentRga) === members_normalizeDigits_(viceRga)) {
     chapaStatus = SETTINGS.election.statusIndeferida;
     chapaReasons.push("A mesma pessoa não pode compor simultaneamente os cargos de Presidente e Vice-Presidente.");
   }
@@ -235,8 +235,8 @@ function members_analyzeChapaRow_(sheet, rowIndex, headers, ctx) {
           ? String(viceResult.member["MEMBRO"]).trim()
           : viceName;
 
-      MailApp.sendEmail({
-        to: recipients.join(","),
+      members_sendHtmlEmailCompat_({
+        to: recipients,
         subject: approved ? SETTINGS.election.emailApprovedSubject : SETTINGS.election.emailRejectedSubject,
         htmlBody: approved
           ? buildMembersChapaApprovedEmailHtml_(emailPresidentName, emailViceName)
@@ -261,7 +261,7 @@ function members_evaluateChapaCandidate_(targetRole, informedName, informedRga, 
     member: null
   };
 
-  const normalizedRga = normalizeMembersDigits_(informedRga);
+  const normalizedRga = members_normalizeDigits_(informedRga);
   if (!normalizedRga) {
     out.status = SETTINGS.election.statusIndeferida;
     out.reasons.push("RGA não informado.");
@@ -337,8 +337,8 @@ function members_registerElectedChapa_(chapaSheet, rowIndex, headers, ctx) {
   const idx = members_getChapaHeaderIndexMap_(headers);
   const row = chapaSheet.getRange(rowIndex, 1, 1, chapaSheet.getLastColumn()).getValues()[0];
 
-  const presidentRga = normalizeMembersDigits_(idx.presidentRga >= 0 ? row[idx.presidentRga] : "");
-  const viceRga = normalizeMembersDigits_(idx.viceRga >= 0 ? row[idx.viceRga] : "");
+  const presidentRga = members_normalizeDigits_(idx.presidentRga >= 0 ? row[idx.presidentRga] : "");
+  const viceRga = members_normalizeDigits_(idx.viceRga >= 0 ? row[idx.viceRga] : "");
 
   const president = ctx.membersByRga[presidentRga];
   const vice = ctx.membersByRga[viceRga];
@@ -406,35 +406,21 @@ function members_buildChapaContext_() {
   const membersByRga = {};
   const diretoriaByRga = {};
 
-  if (currentSheet.getLastRow() >= 2) {
-    const currentLastCol = currentSheet.getLastColumn();
-    const headers = currentSheet.getRange(1, 1, 1, currentLastCol).getValues()[0].map(h => String(h || "").trim());
-    const values = currentSheet.getRange(2, 1, currentSheet.getLastRow() - 1, currentLastCol).getValues();
+  members_readSheetRecordsCompat_(currentSheet).forEach(obj => {
+    const rga = members_normalizeDigits_(obj["RGA"]);
+    if (!rga) return;
+    membersByRga[rga] = obj;
+  });
 
-    for (let i = 0; i < values.length; i++) {
-      const obj = members_rowToObject_(headers, values[i]);
-      const rga = normalizeMembersDigits_(obj["RGA"]);
-      if (!rga) continue;
-      membersByRga[rga] = obj;
+  members_readSheetRecordsCompat_(diretoriaSheet).forEach(obj => {
+    const rga = members_normalizeDigits_(obj["RGA"]);
+    if (!rga) return;
+
+    if (!diretoriaByRga[rga]) {
+      diretoriaByRga[rga] = [];
     }
-  }
-
-  if (diretoriaSheet.getLastRow() >= 2) {
-    const dirLastCol = diretoriaSheet.getLastColumn();
-    const headers = diretoriaSheet.getRange(1, 1, 1, dirLastCol).getValues()[0].map(h => String(h || "").trim());
-    const values = diretoriaSheet.getRange(2, 1, diretoriaSheet.getLastRow() - 1, dirLastCol).getValues();
-
-    for (let i = 0; i < values.length; i++) {
-      const obj = members_rowToObject_(headers, values[i]);
-      const rga = normalizeMembersDigits_(obj["RGA"]);
-      if (!rga) continue;
-
-      if (!diretoriaByRga[rga]) {
-        diretoriaByRga[rga] = [];
-      }
-      diretoriaByRga[rga].push(obj);
-    }
-  }
+    diretoriaByRga[rga].push(obj);
+  });
 
   const nextBoard = members_getNextBoardWindow_(boardsSheet);
   const newMandateDays = nextBoard ? members_getInclusiveDaysBetween_(nextBoard.start, nextBoard.end) : 0;
@@ -461,25 +447,11 @@ function members_getChapaHeaderIndexMap_(headers) {
 }
 
 function members_getGenericHeaderMap_(headers) {
-  const map = {};
-  headers.forEach((h, i) => {
-    map[normalizeMembersText_(h)] = i;
-  });
-  return map;
+  return members_buildHeaderMapCompat_(headers, { normalize: true, oneBased: false });
 }
 
 function members_writeChapaCellByHeader_(sheet, rowIndex, idx, headerName, value) {
-  const col = idx[headerName];
-  if (col == null || col < 0) return;
-  sheet.getRange(rowIndex, col + 1).setValue(value);
-}
-
-function members_rowToObject_(headers, row) {
-  const obj = {};
-  headers.forEach((h, i) => {
-    obj[h] = row[i];
-  });
-  return obj;
+  members_writeCellByHeaderCompat_(sheet, rowIndex, idx, headerName, value, { oneBased: false });
 }
 
 function members_parseSemesterNumber_(value) {
@@ -489,7 +461,7 @@ function members_parseSemesterNumber_(value) {
   return parseInt(m[1], 10);
 }
 
-function normalizeMembersDigits_(value) {
+function members_normalizeDigits_(value) {
   return String(value || "").replace(/\D/g, "");
 }
 
@@ -511,11 +483,11 @@ function members_getAccumulatedDiretoriaDays_(historyRows, referenceDate) {
   let total = 0;
 
   historyRows.forEach(r => {
-    const start = members_toDate_(r["Data_Início"]);
+    const start = members_chapasToDate_(r["Data_Início"]);
     const end =
-      members_toDate_(r["Data_Fim"]) ||
-      members_toDate_(r["Data_Fim_previsto"]) ||
-      members_toDate_(referenceDate);
+      members_chapasToDate_(r["Data_Fim"]) ||
+      members_chapasToDate_(r["Data_Fim_previsto"]) ||
+      members_chapasToDate_(referenceDate);
 
     if (!start || !end) return;
     if (end < start) return;
@@ -533,7 +505,7 @@ function members_getInclusiveDaysBetween_(start, end) {
   return Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1;
 }
 
-function members_toDate_(value) {
+function members_chapasToDate_(value) {
   if (!value) return null;
   if (Object.prototype.toString.call(value) === "[object Date]" && !isNaN(value.getTime())) {
     return value;
@@ -557,12 +529,7 @@ function members_buildChapaOpinion_(status, reasons) {
 }
 
 function members_buildChapaRecipients_(submitterEmail, presidentEmail, viceEmail) {
-  const set = {};
-  [submitterEmail, presidentEmail, viceEmail].forEach(e => {
-    const email = String(e || "").trim().toLowerCase();
-    if (email) set[email] = true;
-  });
-  return Object.keys(set);
+  return members_uniqueEmailsCompat_([submitterEmail, presidentEmail, viceEmail]);
 }
 
 function buildMembersChapaApprovedEmailHtml_(presidentName, viceName) {
@@ -609,8 +576,8 @@ function members_getNextBoardWindow_(boardsSheet) {
     const start = row[idx[normalizeMembersText_("Início_Mandato")]];
     const end = row[idx[normalizeMembersText_("Fim_Mandato")]];
 
-    const startDate = members_toDate_(start);
-    const endDate = members_toDate_(end);
+    const startDate = members_chapasToDate_(start);
+    const endDate = members_chapasToDate_(end);
     if (!id || !startDate || !endDate) return;
 
     if (startDate.getTime() >= members_startOfDay_(now).getTime()) {
@@ -732,8 +699,8 @@ function members_sendElectedChapaEmail_(chapaSheet, rowIndex, idx, president, vi
   const presidentName = president && president["MEMBRO"] ? String(president["MEMBRO"]).trim() : "Presidente";
   const viceName = vice && vice["MEMBRO"] ? String(vice["MEMBRO"]).trim() : "Vice-Presidente";
 
-  MailApp.sendEmail({
-    to: recipients.join(","),
+  members_sendHtmlEmailCompat_({
+    to: recipients,
     subject: SETTINGS.election.electedEmailSubject,
     htmlBody: buildMembersElectedChapaEmailHtml_(presidentName, viceName)
   });

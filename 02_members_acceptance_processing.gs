@@ -38,7 +38,7 @@ function members_processAcceptanceReplies() {
 
   for (let i = 0; i < futureValues.length; i++) {
     const absoluteRow = i + 2;
-    const row = futureSheet.getRange(absoluteRow, 1, 1, futureLastCol).getValues()[0];
+    const row = futureValues[i];
 
     const processStatus = futureIdx.processStatus >= 0
       ? String(row[futureIdx.processStatus] || "").trim()
@@ -80,7 +80,7 @@ function members_processAcceptanceReplies() {
     }
 
     const fromEmail = members_extractEmail_(lastMsg.getFrom() || "");
-    const rowEmail = futureIdx.email >= 0 ? String(row[futureIdx.email] || "").trim().toLowerCase() : "";
+    const rowEmail = futureIdx.email >= 0 ? members_normalizeEmail_(row[futureIdx.email]) : "";
 
     if (!fromEmail || !rowEmail || fromEmail !== rowEmail) continue;
 
@@ -108,8 +108,7 @@ function members_processAcceptanceReplies() {
  * @return {string}
  */
 function members_getEntrySemesterFromAcceptanceDate_(acceptanceDate) {
-  const semesterObj = GEAPA_CORE.coreGetSemesterForDate(acceptanceDate);
-  return semesterObj && semesterObj.id ? semesterObj.id : "";
+  return members_getSemesterId_(acceptanceDate, { plainText: false });
 }
 
 /**
@@ -210,8 +209,7 @@ function members_extractRefusalReason_(body) {
  * @return {string}
  */
 function members_extractEmail_(from) {
-  const m = String(from || "").match(/<([^>]+)>/);
-  return (m ? m[1] : String(from || "")).trim().toLowerCase();
+  return members_extractEmailCompat_(from);
 }
 
 /**
@@ -266,7 +264,7 @@ function members_markFutureAsRefused_(futureSheet, absoluteRow, futureIdx, messa
   }
 
   if (email) {
-    MailApp.sendEmail({
+    members_sendHtmlEmailCompat_({
       to: email,
       subject: SETTINGS.refusalEmail.subject,
       htmlBody: buildMembersRefusalEmailHtml_(name)
@@ -362,7 +360,7 @@ function members_integrateAcceptedFutureMember_(futureSheet, currentSheet, absol
   const name = futureIdx.name >= 0 ? String(row[futureIdx.name] || "").trim() : "";
 
   if (fromEmail) {
-    MailApp.sendEmail({
+    members_sendHtmlEmailCompat_({
       to: fromEmail,
       subject: SETTINGS.finalEmail.subject,
       htmlBody: buildMembersFinalEmailHtml_(name, SETTINGS.finalEmail.whatsappGroupLink)
@@ -430,7 +428,7 @@ function members_processInvitationTimeouts() {
     }
 
     if (email) {
-      MailApp.sendEmail({
+      members_sendHtmlEmailCompat_({
         to: email,
         subject: SETTINGS.timeoutEmail.subject,
         htmlBody: buildMembersTimeoutEmailHtml_(name)
