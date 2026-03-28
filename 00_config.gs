@@ -58,8 +58,7 @@ const SETTINGS = Object.freeze({
     suspended: "Suspenso",
     offboarded: "Desligado",
     disqualified: "Desclassificado",
-    expired: "Prazo expirado",
-    disqualified: "Desclassificado"
+    expired: "Prazo expirado"
   }),
 
   offboarding: Object.freeze({
@@ -153,4 +152,5 @@ function members_assertCore_() {
   if (typeof GEAPA_CORE === "undefined") {
     throw new Error('Library "GEAPA-CORE" não encontrada. Adicione a library com o identificador GEAPA_CORE.');
   }
+  members_ensureCoreCompatibility_();
 }

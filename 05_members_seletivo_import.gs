@@ -3,11 +3,11 @@
  *
  * Importa candidatos aprovados do seletivo
  * para MEMBERS_FUTURO, usando a planilha de
- * inscrição como fonte dos dados cadastrais.
+ * inscricao como fonte dos dados cadastrais.
  *
  * Regra:
- * - Avaliação decide o destino
- * - Inscrição fornece os dados completos
+ * - Avaliacao decide o destino
+ * - Inscricao fornece os dados completos
  * - Aprovado imediato -> MEMBERS_FUTURO com "Enviar e-mail"
  * - Aprovado em espera -> MEMBERS_FUTURO com "Aguardando vaga"
  ***************************************/
@@ -20,26 +20,15 @@ function members_sheetByKey_(key) {
 function members_getHeaderMap1Based_(sheet) {
   const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
     .map(h => String(h || "").trim());
-
-  const map = {};
-  headers.forEach((h, i) => {
-    if (h) map[h] = i + 1;
-  });
-  return map;
-}
-
-function members_rowToObject_(headers, row) {
-  const obj = {};
-  for (let i = 0; i < headers.length; i++) obj[headers[i]] = row[i];
-  return obj;
+  return members_buildHeaderMapCompat_(headers, { normalize: false, oneBased: true });
 }
 
 function members_onlyDigits_(value) {
-  return String(value || "").replace(/\D+/g, "");
+  return members_onlyDigitsCompat_(value);
 }
 
 function members_normalizeEmail_(value) {
-  return String(value || "").trim().toLowerCase();
+  return members_normalizeEmailCompat_(value);
 }
 
 function members_formatCpf_(value) {
@@ -81,13 +70,10 @@ function members_normalizeInstagramHandle_(value) {
   s = s.replace(/\/+$/, "");
   s = s.trim();
 
-  // casos tipo "Sim, @usuario"
   const at = s.match(/@([A-Za-z0-9._]+)/);
   if (at && at[1]) return at[1];
 
-  // se sobrou texto solto, tenta manter só caracteres válidos
   s = s.replace(/[^A-Za-z0-9._]/g, "");
-
   return s;
 }
 
@@ -98,23 +84,15 @@ function members_formulaInstagram_(instagram) {
 }
 
 function members_findInscricaoByRgaOrEmail_(rga, email) {
-  const sh = members_sheetByKey_(SETTINGS.seletivo.inscricaoKey);
-  if (!sh) throw new Error("SELETIVO_INSCRICAO não encontrada.");
-
-  const lastRow = sh.getLastRow();
-  const lastCol = sh.getLastColumn();
-  if (lastRow < 2) return null;
-
-  const headers = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || "").trim());
-  const values = sh.getRange(2, 1, lastRow - 1, lastCol).getValues();
+  const records = members_readRecordsByKey_(SETTINGS.seletivo.inscricaoKey);
+  if (!records.length) return null;
 
   const rgaNorm = String(rga || "").trim();
   const emailNorm = members_normalizeEmail_(email);
-
   let bestByEmail = null;
 
-  for (let i = values.length - 1; i >= 0; i--) {
-    const obj = members_rowToObject_(headers, values[i]);
+  for (let i = records.length - 1; i >= 0; i--) {
+    const obj = records[i];
 
     const rowRga = String(obj["RGA"] || "").trim();
     const rowEmail =
@@ -122,12 +100,10 @@ function members_findInscricaoByRgaOrEmail_(rga, email) {
       members_normalizeEmail_(obj["Endereço de e-mail"] || "");
 
     if (rgaNorm && rowRga === rgaNorm) {
-      obj.__rowNumber = i + 2;
       return obj;
     }
 
     if (!bestByEmail && emailNorm && rowEmail === emailNorm) {
-      obj.__rowNumber = i + 2;
       bestByEmail = obj;
     }
   }
@@ -136,21 +112,7 @@ function members_findInscricaoByRgaOrEmail_(rga, email) {
 }
 
 function members_findAvaliacaoRowsPendentesImport_() {
-  const sh = members_sheetByKey_(SETTINGS.seletivo.avaliacaoKey);
-  if (!sh) throw new Error("SELETIVO_AVALIACAO não encontrada.");
-
-  const lastRow = sh.getLastRow();
-  const lastCol = sh.getLastColumn();
-  if (lastRow < 2) return [];
-
-  const headers = sh.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || "").trim());
-  const values = sh.getRange(2, 1, lastRow - 1, lastCol).getValues();
-
-  return values.map((row, idx) => {
-    const obj = members_rowToObject_(headers, row);
-    obj.__rowNumber = idx + 2;
-    return obj;
-  }).filter(obj => {
+  return members_readRecordsByKey_(SETTINGS.seletivo.avaliacaoKey).filter(obj => {
     const resultado = String(obj["Resultado"] || "").trim();
     const processado = String(obj[SETTINGS.seletivo.processadoHeader] || "").trim().toUpperCase();
 
@@ -165,23 +127,12 @@ function members_findAvaliacaoRowsPendentesImport_() {
 }
 
 function members_futureHasRgaOrEmail_(rga, email) {
-  const sh = members_sheetByKey_(SETTINGS.futureKey);
-  if (!sh) throw new Error("MEMBERS_FUTURO não encontrada.");
-
-  const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(h => String(h || "").trim());
-  const idx = getMembersHeaderIndexMap_(headers);
-
-  const lastRow = sh.getLastRow();
-  if (lastRow < 2) return false;
-
-  const values = sh.getRange(2, 1, lastRow - 1, sh.getLastColumn()).getValues();
-
   const rgaNorm = String(rga || "").trim();
   const emailNorm = members_normalizeEmail_(email);
 
-  return values.some(row => {
-    const rowRga = idx.rga >= 0 ? String(row[idx.rga] || "").trim() : "";
-    const rowEmail = idx.email >= 0 ? members_normalizeEmail_(row[idx.email]) : "";
+  return members_readRecordsByKey_(SETTINGS.futureKey).some(obj => {
+    const rowRga = String(obj["RGA"] || "").trim();
+    const rowEmail = members_normalizeEmail_(obj["EMAIL"]);
     return (rgaNorm && rowRga === rgaNorm) || (emailNorm && rowEmail === emailNorm);
   });
 }
@@ -193,13 +144,13 @@ function members_buildFutureRowFromInscricao_(insc, processStatus) {
 
   return {
     "Nome": String(insc["Nome Completo"] || "").trim(),
-    "Semestre de inscrição": insc["Seletivo Semestre"] || "",
+    "Semestre de inscriÃ§Ã£o": insc["Seletivo Semestre"] || "",
     "RGA": String(insc["RGA"] || "").trim(),
     "CPF": members_formatCpf_(insc["CPF (000.000.000-00)"]),
     "TELEFONE": members_formulaWhatsapp_(insc["Telefone (DDD) XXXXX-XXXX"]),
     "EMAIL": members_formulaEmail_(emailPrincipal),
     "DATA DE NASCIMENTO": insc["Data de nascimento (00/00/0000)"] || "",
-    "@ Instagram": members_formulaInstagram_(insc["Já segue nosso Instagram ( (9) Instagram)? (Obs. inscritos que possuírem conta e não seguirem serão imediatamente desclassificados.)"]),
+    "@ Instagram": members_formulaInstagram_(insc["JÃ¡ segue nosso Instagram ( (9) Instagram)? (Obs. inscritos que possuí­rem conta e não seguirem serão imediatamente desclassificados.)"]),
     "Naturalidade": String(insc["Naturalidade, Ex: Sinop - MT"] || "").trim(),
     "Sexo": String(insc["Sexo"] || "").trim(),
     "Participa/Participou de algum/alguns laboratório(s), projeto(s), pesquisa(s), empresa júnior, monitoria, etc? se sim, citar qual/quais.":
@@ -216,11 +167,7 @@ function members_buildFutureRowFromInscricao_(insc, processStatus) {
 }
 
 function members_appendObjectByHeaders_(sheet, payload) {
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
-    .map(h => String(h || "").trim());
-
-  const row = headers.map(h => Object.prototype.hasOwnProperty.call(payload, h) ? payload[h] : "");
-  sheet.appendRow(row);
+  return members_appendObjectByHeadersCompat_(sheet, payload);
 }
 
 function members_markAvaliacaoImportada_(rowNumber) {
@@ -237,4 +184,154 @@ function members_markAvaliacaoImportada_(rowNumber) {
 
 function members_importFromSeletivoResults() {
   return members_importFromSeletivoResults_v2();
+}
+function members_findInscricaoByRgaOrEmail_v2_(rga, email) {
+  var records = members_readRecordsByKey_(SETTINGS.seletivo.inscricaoKey);
+  if (!records.length) return null;
+
+  var rgaNorm = String(rga || '').trim();
+  var emailNorm = members_normalizeEmail_(email);
+  var bestByEmail = null;
+
+  for (var i = records.length - 1; i >= 0; i--) {
+    var obj = records[i];
+    var rowRga = String(obj['RGA'] || '').trim();
+    var rowEmail =
+      members_normalizeEmail_(obj['Email (OBS: Este será utilizado para a comunicação oficial do grupo, portanto coloque seu principal email).'] || '') ||
+      members_normalizeEmail_(obj['Endereço de e-mail'] || '');
+
+    if (rgaNorm && rowRga === rgaNorm) return obj;
+
+    if (!bestByEmail && emailNorm && rowEmail === emailNorm) {
+      bestByEmail = obj;
+    }
+  }
+
+  return bestByEmail;
+}
+
+function members_findAvaliacaoRowsPendentesImport_v2_() {
+  var records = members_readRecordsByKey_(SETTINGS.seletivo.avaliacaoKey);
+
+  return records.filter(function(obj) {
+    var resultado = String(obj['Resultado'] || '').trim();
+    var processado = String(obj[SETTINGS.seletivo.processadoHeader] || '').trim().toUpperCase();
+
+    return (
+      (
+        resultado === SETTINGS.seletivo.resultadoAprovadoImediato ||
+        resultado === SETTINGS.seletivo.resultadoAprovadoEspera
+      ) &&
+      processado !== 'SIM'
+    );
+  });
+}
+
+function members_futureHasRgaOrEmail_v2_(rga, email) {
+  var records = members_readRecordsByKey_(SETTINGS.futureKey);
+  if (!records.length) return false;
+
+  var rgaNorm = String(rga || '').trim();
+  var emailNorm = members_normalizeEmail_(email);
+
+  return records.some(function(obj) {
+    var rowRga = String(obj['RGA'] || '').trim();
+    var rowEmail = members_normalizeEmail_(obj['EMAIL']);
+    return (rgaNorm && rowRga === rgaNorm) || (emailNorm && rowEmail === emailNorm);
+  });
+}
+
+function members_importFromSeletivoResults_v2() {
+  members_assertCore_();
+
+  var pendentes = members_findAvaliacaoRowsPendentesImport_v2_();
+  Logger.log('members_importFromSeletivoResults_v2: pendentes=' + pendentes.length);
+
+  var futureSheet = members_sheetByKey_(SETTINGS.futureKey);
+  if (!futureSheet) {
+    throw new Error('Não foi possível localizar MEMBERS_FUTURO.');
+  }
+  var futureHeaders = futureSheet.getRange(1, 1, 1, futureSheet.getLastColumn()).getValues()[0]
+    .map(function(h) { return String(h || '').trim(); });
+  var futureIdentityIndex = members_buildFutureIdentityIndex_v2_();
+
+  pendentes.forEach(function(av) {
+    var rga = String(av['RGA'] || '').trim();
+    var email = members_normalizeEmail_(av['Email']);
+    var resultado = String(av['Resultado'] || '').trim();
+
+    var insc = members_findInscricaoByRgaOrEmail_v2_(rga, email);
+    if (!insc) {
+      Logger.log('V2: sem inscrição encontrada para RGA=' + rga + ' | Email=' + email);
+      return;
+    }
+
+    var emailPrincipal =
+      members_normalizeEmail_(insc['Email (OBS: Este será utilizado para a comunicação oficial do grupo, portanto coloque seu principal email).']) ||
+      members_normalizeEmail_(insc['Endereço de e-mail']);
+
+    if (members_futureIndexHasRgaOrEmail_v2_(futureIdentityIndex, rga, emailPrincipal)) {
+      Logger.log('V2: candidato já existe em MEMBERS_FUTURO. RGA=' + rga + ' | Email=' + emailPrincipal);
+      members_markAvaliacaoImportada_(av.__rowNumber);
+      return;
+    }
+
+    var processStatus = '';
+    if (resultado === SETTINGS.seletivo.resultadoAprovadoImediato) {
+      processStatus = SETTINGS.values.sendEmail;
+    } else if (resultado === SETTINGS.seletivo.resultadoAprovadoEspera) {
+      processStatus = SETTINGS.seletivo.waitingProcessStatus;
+    } else {
+      return;
+    }
+
+    var payload = members_buildFutureRowFromInscricao_(insc, processStatus);
+    members_appendObjectByHeaders_(futureSheet, payload);
+    members_registerFutureIdentity_v2_(futureIdentityIndex, rga, emailPrincipal);
+
+    var newRow = futureSheet.getLastRow();
+
+    if (processStatus === SETTINGS.values.sendEmail) {
+      members_sendInviteByRow_(futureSheet, newRow, futureHeaders);
+    }
+
+    members_markAvaliacaoImportada_(av.__rowNumber);
+
+    Logger.log(
+      'V2: importado do seletivo para MEMBERS_FUTURO: ' +
+      (payload['Nome'] || '') + ' | processo=' + processStatus
+    );
+  });
+}
+
+function members_buildFutureIdentityIndex_v2_() {
+  var records = members_readRecordsByKey_(SETTINGS.futureKey);
+  var index = {
+    byRga: {},
+    byEmail: {}
+  };
+
+  records.forEach(function(obj) {
+    members_registerFutureIdentity_v2_(index, obj['RGA'], obj['EMAIL']);
+  });
+
+  return index;
+}
+
+function members_registerFutureIdentity_v2_(index, rga, email) {
+  var rgaNorm = String(rga || '').trim();
+  var emailNorm = members_normalizeEmail_(email);
+
+  if (rgaNorm) index.byRga[rgaNorm] = true;
+  if (emailNorm) index.byEmail[emailNorm] = true;
+}
+
+function members_futureIndexHasRgaOrEmail_v2_(index, rga, email) {
+  var rgaNorm = String(rga || '').trim();
+  var emailNorm = members_normalizeEmail_(email);
+
+  return !!(
+    (rgaNorm && index.byRga[rgaNorm]) ||
+    (emailNorm && index.byEmail[emailNorm])
+  );
 }
