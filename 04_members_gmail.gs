@@ -351,7 +351,7 @@ function members_readSheetRecordsCompat_(sheet, opts) {
       obj[header] = row[col];
     });
     obj.__rowNumber = startRow + idx;
-    return obj;
+    return members_backfillRecordAliases_(obj);
   });
 }
 
@@ -384,6 +384,7 @@ function members_sendHtmlEmailCompat_(params) {
 function members_sendTrackedEmail_(params) {
   var to = String(params.to || "").trim();
   var subject = String(params.subject || "").trim();
+  var body = String(params.body || "");
   var htmlBody = String(params.htmlBody || "");
   var newerThanDays = Number(params.newerThanDays || SETTINGS.timeoutDays || 7);
 
@@ -395,6 +396,7 @@ function members_sendTrackedEmail_(params) {
     var sent = GEAPA_CORE.coreSendTrackedEmail({
       to: to,
       subject: subject,
+      body: body,
       htmlBody: htmlBody,
       newerThanDays: newerThanDays
     }) || {};
@@ -408,6 +410,7 @@ function members_sendTrackedEmail_(params) {
   return members_sendTrackedEmailFallback_({
     to: to,
     subject: subject,
+    body: body,
     htmlBody: htmlBody,
     newerThanDays: newerThanDays
   });
@@ -416,12 +419,14 @@ function members_sendTrackedEmail_(params) {
 function members_sendTrackedEmailFallback_(params) {
   var to = String(params.to || "").trim();
   var subject = String(params.subject || "").trim();
+  var body = String(params.body || "");
   var htmlBody = String(params.htmlBody || "");
   var newerThanDays = Number(params.newerThanDays || SETTINGS.timeoutDays || 7);
 
   members_sendHtmlEmailCompat_({
     to: to,
     subject: subject,
+    body: body,
     htmlBody: htmlBody
   });
 

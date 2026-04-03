@@ -140,7 +140,9 @@ function members_buildHistoryRowFromCurrentAndOffboard_(currentRow, currentHeade
   const approvedAt = members_offboardingToDate_(payload.approvedAt);
   const requestAt = members_offboardingToDate_(payload.requestTimestamp);
   const rga = members_pickValue_(currentRow, currentMap, ["rga"]);
+  const integratedAt = members_pickValue_(currentRow, currentMap, ["data integração", "data integracao"]);
   const wasDirector = members_hasDirectorHistoryByRga_(rga) ? "Sim" : "Nao";
+  const effectiveGroupTime = members_getEffectiveGroupTimeDisplay_(integratedAt, approvedAt);
 
   const automaticNote =
     "Migrado automaticamente de MEMBERS_ATUAIS para MEMBERS_HIST apos deferimento " +
@@ -230,6 +232,10 @@ function members_buildHistoryRowFromCurrentAndOffboard_(currentRow, currentHeade
       output[idx] = String(payload.reason || "").trim();
       return;
     }
+    if (members_histHeaderMatches_(header, "TEMPO_EFETIVO_NO_GRUPO")) {
+      output[idx] = effectiveGroupTime;
+      return;
+    }
     if (members_histHeaderMatches_(header, SETTINGS.histHeaders.wasDirector)) {
       output[idx] = wasDirector;
       return;
@@ -286,6 +292,14 @@ function members_pickValue_(row, map, candidates) {
     const idx = map[members_normalizeOffboardingHeader_(candidates[i])];
     if (idx != null && idx >= 0) return row[idx];
   }
+
+  const keys = Object.keys(map || {});
+  for (let i = 0; i < keys.length; i++) {
+    if (!members_aliasesMatchKnownHeaderGroup_(keys[i], candidates)) continue;
+    const idx = map[keys[i]];
+    if (idx != null && idx >= 0) return row[idx];
+  }
+
   return "";
 }
 
@@ -306,7 +320,7 @@ function members_histHeaderMatches_(header, aliases) {
       return true;
     }
   }
-  return false;
+  return members_aliasesMatchKnownHeaderGroup_(header, list);
 }
 
 function members_getRecordValueByHeaderAliases_(record, aliases) {
@@ -379,4 +393,27 @@ function members_getSemesterFromDate_(value) {
   const dt = members_offboardingToDate_(value);
   if (!dt) return "";
   return members_getSemesterId_(dt, { plainText: true });
+}
+
+function members_getEffectiveGroupTimeDisplay_(startValue, endValue) {
+  const start = members_offboardingToDate_(startValue);
+  const end = members_offboardingToDate_(endValue);
+  if (!start || !end) return "";
+
+  let totalMonths =
+    (end.getFullYear() - start.getFullYear()) * 12 +
+    (end.getMonth() - start.getMonth());
+
+  if (end.getDate() < start.getDate()) {
+    totalMonths -= 1;
+  }
+
+  if (totalMonths < 0) totalMonths = 0;
+
+  const years = Math.floor(totalMonths / 12);
+  const months = totalMonths % 12;
+  const yearsLabel = years === 1 ? "ano" : "anos";
+  const monthsLabel = months === 1 ? "mês" : "meses";
+
+  return years + " " + yearsLabel + " e " + months + " " + monthsLabel;
 }

@@ -218,21 +218,21 @@ function members_analyzeChapaRow_(sheet, rowIndex, headers, ctx) {
   if (normalizeMembersText_(emailSent) !== normalizeMembersText_(SETTINGS.election.emailSentYes)) {
     const recipients = members_buildChapaRecipients_(
       submitterEmail,
-      presidentResult.member ? presidentResult.member["EMAIL"] : "",
-      viceResult.member ? viceResult.member["EMAIL"] : ""
+      presidentResult.member ? members_getCurrentField_(presidentResult.member, "email") : "",
+      viceResult.member ? members_getCurrentField_(viceResult.member, "email") : ""
     );
 
     if (recipients.length) {
       const approved = normalizeMembersText_(chapaStatus) === normalizeMembersText_(SETTINGS.election.statusDeferida);
 
       const emailPresidentName =
-        (presidentResult.member && presidentResult.member["MEMBRO"])
-          ? String(presidentResult.member["MEMBRO"]).trim()
+        (presidentResult.member && members_getCurrentField_(presidentResult.member, "name"))
+          ? String(members_getCurrentField_(presidentResult.member, "name")).trim()
           : presidentName;
 
       const emailViceName =
-        (viceResult.member && viceResult.member["MEMBRO"])
-          ? String(viceResult.member["MEMBRO"]).trim()
+        (viceResult.member && members_getCurrentField_(viceResult.member, "name"))
+          ? String(members_getCurrentField_(viceResult.member, "name")).trim()
           : viceName;
 
       members_sendHtmlEmailCompat_({
@@ -277,7 +277,7 @@ function members_evaluateChapaCandidate_(targetRole, informedName, informedRga, 
 
   out.member = member;
 
-  const memberStatus = normalizeMembersText_(member["Status"]);
+  const memberStatus = normalizeMembersText_(members_getCurrentField_(member, "status"));
   if (memberStatus !== normalizeMembersText_(SETTINGS.values.active)) {
     out.status = SETTINGS.election.statusIndeferida;
     out.reasons.push("O candidato não está com status ativo em MEMBERS_ATUAIS.");
@@ -289,7 +289,7 @@ function members_evaluateChapaCandidate_(targetRole, informedName, informedRga, 
     out.reasons.push("O candidato não possui pelo menos 1 semestre no grupo.");
   }
 
-  const semestreAtual = members_parseSemesterNumber_(member["Semestre atual"]);
+  const semestreAtual = members_parseSemesterNumber_(members_getCurrentField_(member, "currentSemester"));
   if (semestreAtual == null || semestreAtual < 1 || semestreAtual > 7) {
     out.status = SETTINGS.election.statusIndeferida;
     out.reasons.push("O candidato não está entre o 1º e o 7º semestre.");
@@ -323,8 +323,8 @@ function members_evaluateChapaCandidate_(targetRole, informedName, informedRga, 
     );
   }
 
-  if (informedName && member["MEMBRO"]) {
-    const sameName = members_namesAreCompatible_(informedName, member["MEMBRO"]);
+  if (informedName && members_getCurrentField_(member, "name")) {
+    const sameName = members_namesAreCompatible_(informedName, members_getCurrentField_(member, "name"));
     if (!sameName) {
       out.reasons.push("Nome informado diverge parcialmente do nome cadastrado; conferir manualmente.");
     }
@@ -621,9 +621,9 @@ function members_buildBoardMemberRow_(headers, member, roleName, boardWindow) {
   const arr = new Array(headers.length).fill("");
   const idx = members_getGenericHeaderMap_(headers);
 
-  members_setRowValueIfHeaderExists_(arr, idx, "Nome", member["MEMBRO"] || "");
+  members_setRowValueIfHeaderExists_(arr, idx, "Nome", members_getCurrentField_(member, "name") || "");
   members_setRowValueIfHeaderExists_(arr, idx, "RGA", member["RGA"] || "");
-  members_setRowValueIfHeaderExists_(arr, idx, "E-mail", member["EMAIL"] || "");
+  members_setRowValueIfHeaderExists_(arr, idx, "E-mail", members_getCurrentField_(member, "email") || "");
   members_setRowValueIfHeaderExists_(arr, idx, "Cargo/Função", roleName);
   members_setRowValueIfHeaderExists_(arr, idx, "ID_Diretoria", boardWindow.id);
   members_setRowValueIfHeaderExists_(arr, idx, "Data_Início", boardWindow.start);
@@ -690,14 +690,14 @@ function members_sendElectedChapaEmail_(chapaSheet, rowIndex, idx, president, vi
 
   const recipients = members_buildChapaRecipients_(
     submitterEmail,
-    president ? president["EMAIL"] : "",
-    vice ? vice["EMAIL"] : ""
+    president ? members_getCurrentField_(president, "email") : "",
+    vice ? members_getCurrentField_(vice, "email") : ""
   );
 
   if (!recipients.length) return;
 
-  const presidentName = president && president["MEMBRO"] ? String(president["MEMBRO"]).trim() : "Presidente";
-  const viceName = vice && vice["MEMBRO"] ? String(vice["MEMBRO"]).trim() : "Vice-Presidente";
+  const presidentName = president && members_getCurrentField_(president, "name") ? String(members_getCurrentField_(president, "name")).trim() : "Presidente";
+  const viceName = vice && members_getCurrentField_(vice, "name") ? String(members_getCurrentField_(vice, "name")).trim() : "Vice-Presidente";
 
   members_sendHtmlEmailCompat_({
     to: recipients,

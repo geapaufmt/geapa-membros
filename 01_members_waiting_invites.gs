@@ -76,10 +76,18 @@ function members_sendInviteByRow_(sheet, rowIndex, headers) {
     return;
   }
 
+  const inviteDraft = members_buildInviteOutgoingDraft_({
+    rowIndex: rowIndex,
+    name: name,
+    email: email,
+    rga: idx.rga >= 0 ? String(row[idx.rga] || "").trim() : ""
+  });
+
   const trackedSend = members_sendTrackedEmail_({
     to: email,
-    subject: SETTINGS.inviteEmail.subject,
-    htmlBody: buildMembersInviteEmailHtml_(name),
+    subject: inviteDraft.subject,
+    body: inviteDraft.bodyText,
+    htmlBody: inviteDraft.htmlBody,
     newerThanDays: SETTINGS.timeoutDays
   });
   const threadId = String((trackedSend && trackedSend.threadId) || "").trim();
@@ -97,6 +105,117 @@ function members_sendInviteByRow_(sheet, rowIndex, headers) {
   if (idx.threadId >= 0 && threadId) {
     sheet.getRange(rowIndex, idx.threadId + 1).setValue(threadId);
   }
+}
+
+function members_assertInviteRendererCore_() {
+  const requiredFns = [
+    "coreMailBuildCorrelationKey",
+    "coreMailBuildOutgoingDraft"
+  ];
+
+  requiredFns.forEach(function(fnName) {
+    if (!members_coreHas_(fnName)) {
+      throw new Error(
+        'O piloto do convite institucional exige GEAPA-CORE com a funcao "' + fnName + '" exportada.'
+      );
+    }
+  });
+}
+
+function members_slugCorrelationToken_(value) {
+  return members_normalizeTextCompat_(value, {
+    removeAccents: true,
+    collapseWhitespace: true,
+    caseMode: "lower"
+  })
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function members_buildInviteCorrelationIdentifier_(ctx) {
+  const rgaDigits = members_onlyDigitsCompat_(ctx.rga);
+  if (rgaDigits) return rgaDigits;
+
+  const normalizedEmail = members_normalizeEmailCompat_(ctx.email);
+  if (normalizedEmail) {
+    const emailLocalPart = String(normalizedEmail.split("@")[0] || "").trim();
+    const emailToken = members_slugCorrelationToken_(emailLocalPart);
+    if (emailToken) return emailToken;
+  }
+
+  const nameToken = members_slugCorrelationToken_(ctx.name);
+  if (nameToken) return nameToken;
+
+  return "linha-" + String(ctx.rowIndex || "");
+}
+
+function members_buildInviteCorrelationKey_(ctx) {
+  members_assertInviteRendererCore_();
+
+  const now = new Date();
+  const identifier = members_buildInviteCorrelationIdentifier_(ctx);
+
+  return GEAPA_CORE.coreMailBuildCorrelationKey("MEM", {
+    businessId: String(now.getFullYear()) + "-" + identifier,
+    flowCode: "CNV",
+    stage: "CAND"
+  });
+}
+
+function members_getInviteSubjectHuman_() {
+  return "Confirmação de interesse em ingressar no GEAPA";
+}
+
+function members_buildInviteOutgoingDraft_(ctx) {
+  members_assertInviteRendererCore_();
+
+  const safeName = String(ctx.name || "").trim() || "candidato(a)";
+  const correlationKey = members_buildInviteCorrelationKey_(ctx);
+  const subjectHuman = members_getInviteSubjectHuman_();
+
+  return GEAPA_CORE.coreMailBuildOutgoingDraft({
+    moduleName: "MEMBROS",
+    templateKey: "GEAPA_OPERACIONAL",
+    correlationKey: correlationKey,
+    to: ctx.email,
+    cc: "",
+    bcc: "",
+    subjectHuman: subjectHuman,
+    payload: {
+      title: subjectHuman,
+      subtitle: "Fluxo de ingresso no GEAPA",
+      introText:
+        "Olá, " + safeName + "!\n\n" +
+        "Entramos em contato para confirmar se você deseja ingressar oficialmente no GEAPA.",
+      blocks: [
+        {
+          title: "Como responder",
+          text: "Responda este mesmo e-mail com uma das palavras abaixo.",
+          items: [
+            {
+              label: "Para confirmar seu ingresso",
+              value: "ACEITO"
+            },
+            {
+              label: "Se não desejar ingressar neste momento",
+              value: "RECUSO"
+            }
+          ]
+        },
+        {
+          title: "Observações",
+          text: "Você pode escrever outras informações junto da resposta, se quiser.",
+          items: [
+            { value: "ACEITO, muito obrigado!" },
+            { value: "RECUSO, pois no momento não conseguirei participar." }
+          ]
+        }
+      ],
+      footerNote:
+        "Assim que sua resposta for processada, daremos continuidade ao procedimento correspondente."
+    }
+  });
 }
 
 /**
@@ -134,24 +253,23 @@ function buildMembersInviteEmailHtml_(name) {
  */
 function getMembersHeaderIndexMap_(headers) {
   const normalizedMap = members_buildHeaderMap_(headers, { normalize: true, oneBased: false });
-  const find = function(label) {
-    const key = normalizeMembersText_(label);
-    return Object.prototype.hasOwnProperty.call(normalizedMap, key) ? normalizedMap[key] : -1;
+  const find = function(aliases) {
+    return members_findHeaderIndexByAliases_(normalizedMap, aliases, { notFoundValue: -1 });
   };
 
   return {
-    name: find(SETTINGS.headers.name),
-    email: find(SETTINGS.headers.email),
-    rga: find("rga"),
-    status: find(SETTINGS.headers.status),
-    processStatus: find(SETTINGS.headers.processStatus),
-    sentAt: find(SETTINGS.headers.sentAt),
-    repliedAt: find(SETTINGS.headers.repliedAt),
-    notes: find(SETTINGS.headers.notes),
-    entrySemester: find(SETTINGS.headers.entrySemester),
-    threadId: find(SETTINGS.headers.threadId),
-    messageId: find(SETTINGS.headers.messageId),
-    integratedAt: find(SETTINGS.headers.integratedAt)
+    name: find(members_getHeaderAliases_("future", "name")),
+    email: find(members_getHeaderAliases_("future", "email")),
+    rga: find(members_getHeaderAliases_("future", "rga")),
+    status: find(members_getHeaderAliases_("future", "status")),
+    processStatus: find(members_getHeaderAliases_("future", "processStatus")),
+    sentAt: find(members_getHeaderAliases_("future", "sentAt")),
+    repliedAt: find(members_getHeaderAliases_("future", "repliedAt")),
+    notes: find(members_getHeaderAliases_("future", "notes")),
+    entrySemester: find(members_getHeaderAliases_("future", "entrySemester")),
+    threadId: find(members_getHeaderAliases_("future", "threadId")),
+    messageId: find(members_getHeaderAliases_("future", "messageId")),
+    integratedAt: find(members_getHeaderAliases_("future", "integratedAt"))
   };
 }
 
