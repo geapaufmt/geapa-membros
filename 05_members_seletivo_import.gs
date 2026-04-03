@@ -132,7 +132,9 @@ function members_futureHasRgaOrEmail_(rga, email) {
 
   return members_readRecordsByKey_(SETTINGS.futureKey).some(obj => {
     const rowRga = String(obj["RGA"] || "").trim();
-    const rowEmail = members_normalizeEmail_(obj["EMAIL"]);
+    const rowEmail = members_normalizeEmail_(
+      members_getRecordValueByAliases_(obj, members_getHeaderAliases_("future", "email"))
+    );
     return (rgaNorm && rowRga === rgaNorm) || (emailNorm && rowEmail === emailNorm);
   });
 }
@@ -166,8 +168,76 @@ function members_buildFutureRowFromInscricao_(insc, processStatus) {
   };
 }
 
+function members_buildFutureRowFromInscricao_legacyEncoding_(insc, processStatus) {
+  const emailPrincipal =
+    members_normalizeEmail_(
+      members_getInscricaoFieldByCandidates_(insc, [
+        "Email (OBS: Este sera utilizado para a comunicacao oficial do grupo, portanto coloque seu principal email).",
+        "Endereco de e-mail"
+      ])
+    );
+  const instagramValue = members_getInscricaoInstagram_(insc);
+  const academicHistory = members_getInscricaoAcademicHistory_(insc);
+
+  return {
+    "NOME_MEMBRO": String(insc["Nome Completo"] || "").trim(),
+    "SEMESTRE_INSCRICAO": insc["Seletivo Semestre"] || "",
+    "RGA": String(insc["RGA"] || "").trim(),
+    "CPF": members_formatCpf_(insc["CPF (000.000.000-00)"]),
+    "TELEFONE": members_formulaWhatsapp_(insc["Telefone (DDD) XXXXX-XXXX"]),
+    "EMAIL": members_formulaEmail_(emailPrincipal),
+    "DATA_NASCIMENTO": insc["Data de nascimento (00/00/0000)"] || "",
+    "INSTAGRAM": members_formulaInstagram_(instagramValue),
+    "NATURALIDADE": String(insc["Naturalidade, Ex: Sinop - MT"] || "").trim(),
+    "SEXO": String(insc["Sexo"] || "").trim(),
+    "HISTORICO_ATIVIDADES_ACADEMICAS": String(academicHistory || "").trim(),
+    "SEMESTRE_ATUAL": String(insc["Semestre atual"] || "").trim(),
+    "STATUS_CADASTRAL": SETTINGS.values.waiting,
+    "STATUS_PROCESSO_INGRESSO": processStatus,
+    "DATA_ENVIO_CONVITE": "",
+    "THREAD_ID_CONVITE": "",
+    "DATA_RESPOSTA": "",
+    "MESSAGE_ID_RESPOSTA": "",
+    "OBSERVACAO_PROCESSO": ""
+  };
+}
+
+function members_buildFutureRowFromInscricao_(insc, processStatus) {
+  const emailPrincipal =
+    members_normalizeEmail_(
+      members_getInscricaoFieldByCandidates_(insc, [
+        "Email (OBS: Este sera utilizado para a comunicacao oficial do grupo, portanto coloque seu principal email).",
+        "Endereco de e-mail"
+      ])
+    );
+  const instagramValue = members_getInscricaoInstagram_(insc);
+  const academicHistory = members_getInscricaoAcademicHistory_(insc);
+
+  return {
+    "NOME_MEMBRO": String(insc["Nome Completo"] || "").trim(),
+    "SEMESTRE_INSCRICAO": insc["Seletivo Semestre"] || "",
+    "RGA": String(insc["RGA"] || "").trim(),
+    "CPF": members_formatCpf_(insc["CPF (000.000.000-00)"]),
+    "TELEFONE": members_formulaWhatsapp_(insc["Telefone (DDD) XXXXX-XXXX"]),
+    "EMAIL": members_formulaEmail_(emailPrincipal),
+    "DATA_NASCIMENTO": insc["Data de nascimento (00/00/0000)"] || "",
+    "INSTAGRAM": members_formulaInstagram_(instagramValue),
+    "NATURALIDADE": String(insc["Naturalidade, Ex: Sinop - MT"] || "").trim(),
+    "SEXO": String(insc["Sexo"] || "").trim(),
+    "HISTORICO_ATIVIDADES_ACADEMICAS": String(academicHistory || "").trim(),
+    "SEMESTRE_ATUAL": String(insc["Semestre atual"] || "").trim(),
+    "STATUS_CADASTRAL": SETTINGS.values.waiting,
+    "STATUS_PROCESSO_INGRESSO": processStatus,
+    "DATA_ENVIO_CONVITE": "",
+    "THREAD_ID_CONVITE": "",
+    "DATA_RESPOSTA": "",
+    "MESSAGE_ID_RESPOSTA": "",
+    "OBSERVACAO_PROCESSO": ""
+  };
+}
+
 function members_appendObjectByHeaders_(sheet, payload) {
-  return members_appendObjectByHeadersCompat_(sheet, payload);
+  return members_appendObjectByHeadersCompat_(sheet, members_adaptPayloadToSheetHeaders_(sheet, payload, "future"));
 }
 
 function members_markAvaliacaoImportada_(rowNumber) {
@@ -334,4 +404,90 @@ function members_futureIndexHasRgaOrEmail_v2_(index, rga, email) {
     (rgaNorm && index.byRga[rgaNorm]) ||
     (emailNorm && index.byEmail[emailNorm])
   );
+}
+
+function members_getInscricaoFieldByCandidates_(insc, candidates) {
+  const record = insc || {};
+  const keys = Object.keys(record);
+  const list = Array.isArray(candidates) ? candidates : [candidates];
+
+  for (let i = 0; i < list.length; i++) {
+    const target = members_normalizeOffboardingHeader_(list[i]);
+    for (let j = 0; j < keys.length; j++) {
+      if (members_normalizeOffboardingHeader_(keys[j]) === target) {
+        return record[keys[j]];
+      }
+    }
+  }
+
+  return "";
+}
+
+function members_findInscricaoFieldContainingAll_(insc, requiredTerms) {
+  const record = insc || {};
+  const keys = Object.keys(record);
+  const terms = (Array.isArray(requiredTerms) ? requiredTerms : [requiredTerms])
+    .map(term => members_normalizeOffboardingHeader_(term))
+    .filter(Boolean);
+
+  for (let i = 0; i < keys.length; i++) {
+    const normalizedKey = members_normalizeOffboardingHeader_(keys[i]);
+    const matchesAll = terms.every(term => normalizedKey.indexOf(term) >= 0);
+    if (matchesAll) return record[keys[i]];
+  }
+
+  return "";
+}
+
+function members_getInscricaoInstagram_(insc) {
+  return (
+    members_getInscricaoFieldByCandidates_(insc, ["Instagram", "@ Instagram", "INSTAGRAM"]) ||
+    members_findInscricaoFieldContainingAll_(insc, ["instagram"])
+  );
+}
+
+function members_getInscricaoAcademicHistory_(insc) {
+  return (
+    members_getInscricaoFieldByCandidates_(insc, [
+      "Participa/Participou de algum/alguns laboratorio(s), projeto(s), pesquisa(s), empresa junior, monitoria, etc? se sim, citar qual/quais.",
+      "HISTORICO_ATIVIDADES_ACADEMICAS"
+    ]) ||
+    members_findInscricaoFieldContainingAll_(insc, ["participa", "participou"]) ||
+    members_findInscricaoFieldContainingAll_(insc, ["laboratorio", "projeto", "pesquisa"])
+  );
+}
+
+function members_buildFutureRowFromInscricao_legacyEncodingFinal_(insc, processStatus) {
+  const emailPrincipal =
+    members_normalizeEmail_(
+      members_getInscricaoFieldByCandidates_(insc, [
+        "Email (OBS: Este sera utilizado para a comunicacao oficial do grupo, portanto coloque seu principal email).",
+        "Endereco de e-mail"
+      ])
+    );
+  const instagramValue = members_getInscricaoInstagram_(insc);
+  const academicHistory = members_getInscricaoAcademicHistory_(insc);
+
+  return {
+    "Nome": String(insc["Nome Completo"] || "").trim(),
+    "Semestre de inscriÃƒÂ§ÃƒÂ£o": insc["Seletivo Semestre"] || "",
+    "RGA": String(insc["RGA"] || "").trim(),
+    "CPF": members_formatCpf_(insc["CPF (000.000.000-00)"]),
+    "TELEFONE": members_formulaWhatsapp_(insc["Telefone (DDD) XXXXX-XXXX"]),
+    "EMAIL": members_formulaEmail_(emailPrincipal),
+    "DATA DE NASCIMENTO": insc["Data de nascimento (00/00/0000)"] || "",
+    "@ Instagram": members_formulaInstagram_(instagramValue),
+    "Naturalidade": String(insc["Naturalidade, Ex: Sinop - MT"] || "").trim(),
+    "Sexo": String(insc["Sexo"] || "").trim(),
+    "Participa/Participou de algum/alguns laboratÃ³rio(s), projeto(s), pesquisa(s), empresa jÃºnior, monitoria, etc? se sim, citar qual/quais.":
+      String(academicHistory || "").trim(),
+    "Semestre atual": String(insc["Semestre atual"] || "").trim(),
+    "Status": SETTINGS.values.waiting,
+    "Status do processo": processStatus,
+    "Data envio convite": "",
+    "ThreadId convite": "",
+    "Data resposta": "",
+    "MessageId resposta": "",
+    "ObservaÃ§Ãµes do processo": ""
+  };
 }

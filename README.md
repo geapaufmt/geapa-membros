@@ -49,10 +49,19 @@ Arquivo principal:
 Fluxo:
 
 - reage a `Status do processo = Enviar e-mail` em `MEMBERS_FUTURO`;
-- envia o convite por e-mail;
+- monta uma `correlationKey` do fluxo de convite;
+- renderiza o HTML institucional via `GEAPA-CORE`;
+- envia o convite por e-mail com assunto final padronizado em `[GEAPA][CHAVE]`;
 - grava `Data envio convite`;
 - grava `ThreadId convite`;
 - marca `Status do processo = E-mail enviado`.
+
+Piloto atual:
+
+- apenas o convite inicial de ingresso foi integrado ao renderer institucional do core;
+- o modulo continua dono do conteudo de negocio do convite;
+- o layout, o assunto final, a assinatura institucional e o slogan vigente da diretoria passam a ser montados pelo `GEAPA-CORE`;
+- processamento de respostas `ACEITO` e `RECUSO` ainda permanece no fluxo antigo.
 
 ### 3. Processamento de respostas
 
@@ -63,6 +72,8 @@ Arquivo principal:
 Fluxo:
 
 - lê respostas do Gmail a partir do `ThreadId convite`;
+- quando o Mail Hub central já tiver ingerido a resposta, prefere consumir `MAIL_EVENTOS` por `threadId`;
+- se não houver evento pendente suficiente na central, faz fallback seguro para a leitura direta do Gmail;
 - identifica a última mensagem válida do candidato;
 - trata `ACEITO` e `RECUSO`;
 - registra `Data resposta` e `MessageId resposta`;
@@ -201,6 +212,8 @@ O módulo depende do core para:
 - construir/usar mapas de cabeçalho;
 - append e leitura por registros;
 - envio HTML e envio rastreado de e-mails;
+- renderer institucional de e-mails e montagem de `correlationKey` no convite de ingresso;
+- leitura de respostas via Mail Hub central quando `MAIL_EVENTOS` já estiver alimentada;
 - cálculo de semestre e sincronizações derivadas em `MEMBERS_ATUAIS`.
 
 ---

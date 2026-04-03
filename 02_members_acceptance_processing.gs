@@ -341,7 +341,11 @@ function members_integrateAcceptedFutureMember_(futureSheet, currentSheet, absol
 
   // grava Data integração no destino, se existir a coluna
   const currentIdx = members_getHeaderMap_(currentHeaders);
-  const integratedAtIdx = currentIdx[String(SETTINGS.headers.integratedAt).trim().toLowerCase()];
+  const integratedAtIdx = members_findHeaderIndexByAliases_(
+    currentIdx,
+    members_getHeaderAliases_("current", "integratedAt"),
+    { notFoundValue: -1 }
+  );
   if (integratedAtIdx != null && integratedAtIdx >= 0) {
     currentSheet.getRange(newRowIndex, integratedAtIdx + 1).setValue(acceptedAt);
   }
@@ -447,4 +451,274 @@ function buildMembersTimeoutEmailHtml_(name) {
     <p>Caso deseje ingressar futuramente, será necessário participar de um novo processo seletivo.</p>
     <p>Atenciosamente,<br>GEAPA</p>
   `;
+}
+
+function members_canUseMailHubReplyProcessing_() {
+  return members_coreHas_("coreMailGetLatestEvent") && members_coreHas_("coreMailMarkEventProcessed");
+}
+
+function members_tryIngestMailHubInbox_() {
+  if (!members_coreHas_("coreMailIngestInbox")) return null;
+
+  try {
+    return GEAPA_CORE.coreMailIngestInbox({
+      maxEventsPerExecution: 50
+    });
+  } catch (err) {
+    return null;
+  }
+}
+
+function members_tryGetPendingReplyEventFromMailHub_(threadId, rowEmail, savedMessageId) {
+  if (!members_canUseMailHubReplyProcessing_()) return null;
+
+  const event = GEAPA_CORE.coreMailGetLatestEvent({
+    moduleName: "MEMBROS",
+    processingStatus: "PENDENTE",
+    threadId: String(threadId || "").trim()
+  });
+
+  if (!event) return null;
+  if (String(event.direction || "").trim().toUpperCase() !== "ENTRADA") return null;
+  if (savedMessageId && String(event.messageId || "").trim() === String(savedMessageId || "").trim()) return null;
+
+  const normalizedFrom = members_normalizeEmail_(event.fromEmail || "");
+  if (!normalizedFrom || !rowEmail || normalizedFrom !== rowEmail) return null;
+
+  const body = [
+    String(event.plainBody || "").trim(),
+    String(event.snippet || "").trim()
+  ].filter(Boolean).join("\n");
+
+  return Object.freeze({
+    eventId: String(event.eventId || "").trim(),
+    messageId: String(event.messageId || "").trim(),
+    threadId: String(event.threadId || "").trim(),
+    body: body,
+    event: event
+  });
+}
+
+function members_markMailHubEventProcessed_(eventId) {
+  if (!eventId || !members_coreHas_("coreMailMarkEventProcessed")) return null;
+
+  try {
+    return GEAPA_CORE.coreMailMarkEventProcessed(
+      String(eventId || "").trim(),
+      "geapa-membros.members_processAcceptanceReplies"
+    );
+  } catch (err) {
+    return null;
+  }
+}
+
+function members_processAcceptanceReplies() {
+  members_assertCore_();
+  members_tryIngestMailHubInbox_();
+
+  const futureSheet = GEAPA_CORE.coreGetSheetByKey(SETTINGS.futureKey);
+  const currentSheet = GEAPA_CORE.coreGetSheetByKey(SETTINGS.currentKey);
+  if (!futureSheet || !currentSheet) {
+    throw new Error("NÃ£o foi possÃ­vel localizar MEMBERS_FUTURO ou MEMBERS_ATUAIS.");
+  }
+
+  const futureLastRow = futureSheet.getLastRow();
+  const futureLastCol = futureSheet.getLastColumn();
+  if (futureLastRow < 2) return;
+
+  const futureHeaders = futureSheet.getRange(1, 1, 1, futureLastCol).getValues()[0].map(h => String(h || "").trim());
+  const futureIdx = getMembersHeaderIndexMap_(futureHeaders);
+  const futureRange = futureSheet.getRange(2, 1, futureLastRow - 1, futureLastCol);
+  const futureValues = futureRange.getValues();
+  const futureFormulas = futureRange.getFormulas();
+
+  for (let i = 0; i < futureValues.length; i++) {
+    const absoluteRow = i + 2;
+    const row = futureValues[i];
+    const rowFormulas = futureFormulas[i];
+
+    const processStatus = futureIdx.processStatus >= 0
+      ? String(row[futureIdx.processStatus] || "").trim()
+      : "";
+
+    if (
+      normalizeMembersText_(processStatus) === normalizeMembersText_(SETTINGS.values.integrated) ||
+      normalizeMembersText_(processStatus) === normalizeMembersText_(SETTINGS.values.refused)
+    ) {
+      continue;
+    }
+
+    const threadId = futureIdx.threadId >= 0
+      ? String(row[futureIdx.threadId] || "").trim()
+      : "";
+
+    if (!threadId) continue;
+
+    const savedMessageId = futureIdx.messageId >= 0
+      ? String(row[futureIdx.messageId] || "").trim()
+      : "";
+    const rowEmail = futureIdx.email >= 0 ? members_normalizeEmail_(row[futureIdx.email]) : "";
+    const mailHubReply = members_tryGetPendingReplyEventFromMailHub_(threadId, rowEmail, savedMessageId);
+
+    if (mailHubReply && members_hasRefusalText_(mailHubReply.body)) {
+      const refusalReason = members_extractRefusalReason_(mailHubReply.body);
+      members_markFutureAsRefused_(futureSheet, absoluteRow, futureIdx, mailHubReply.messageId, refusalReason);
+      members_markMailHubEventProcessed_(mailHubReply.eventId);
+      continue;
+    }
+
+    if (mailHubReply && members_hasAcceptanceText_(mailHubReply.body)) {
+      members_integrateAcceptedFutureMember_(
+        futureSheet,
+        currentSheet,
+        absoluteRow,
+        futureHeaders,
+        futureIdx,
+        row,
+        rowFormulas,
+        mailHubReply.messageId
+      );
+      members_markMailHubEventProcessed_(mailHubReply.eventId);
+      continue;
+    }
+
+    let thread;
+    try {
+      thread = GmailApp.getThreadById(threadId);
+    } catch (e) {
+      thread = null;
+    }
+    if (!thread) continue;
+
+    const msgs = thread.getMessages();
+    if (!msgs.length) continue;
+
+    const lastMsg = msgs[msgs.length - 1];
+    const messageId = lastMsg.getId();
+
+    if (savedMessageId && savedMessageId === String(messageId)) {
+      continue;
+    }
+
+    const fromEmail = members_extractEmail_(lastMsg.getFrom() || "");
+
+    if (!fromEmail || !rowEmail || fromEmail !== rowEmail) continue;
+
+    const body = `${lastMsg.getPlainBody() || ""}\n${lastMsg.getBody() || ""}`;
+
+    if (members_hasRefusalText_(body)) {
+      const refusalReason = members_extractRefusalReason_(body);
+      members_markFutureAsRefused_(futureSheet, absoluteRow, futureIdx, messageId, refusalReason);
+      if (mailHubReply && mailHubReply.messageId === String(messageId)) {
+        members_markMailHubEventProcessed_(mailHubReply.eventId);
+      }
+      continue;
+    }
+
+    if (!members_hasAcceptanceText_(body)) continue;
+
+    members_integrateAcceptedFutureMember_(
+      futureSheet,
+      currentSheet,
+      absoluteRow,
+      futureHeaders,
+      futureIdx,
+      row,
+      rowFormulas,
+      messageId
+    );
+    if (mailHubReply && mailHubReply.messageId === String(messageId)) {
+      members_markMailHubEventProcessed_(mailHubReply.eventId);
+    }
+  }
+}
+
+function members_integrateAcceptedFutureMember_(futureSheet, currentSheet, absoluteRow, futureHeaders, futureIdx, row, rowFormulas, messageId) {
+  const currentProcessStatus = futureIdx.processStatus >= 0
+    ? String(row[futureIdx.processStatus] || "").trim()
+    : "";
+
+  if (normalizeMembersText_(currentProcessStatus) === normalizeMembersText_(SETTINGS.values.integrated)) {
+    return;
+  }
+
+  const acceptedAt = new Date();
+  const entrySemester = members_getEntrySemesterFromAcceptanceDate_(acceptedAt);
+
+  if (futureIdx.repliedAt >= 0) {
+    futureSheet.getRange(absoluteRow, futureIdx.repliedAt + 1).setValue(acceptedAt);
+  }
+  if (futureIdx.processStatus >= 0) {
+    futureSheet.getRange(absoluteRow, futureIdx.processStatus + 1).setValue(SETTINGS.values.accepted);
+  }
+  if (futureIdx.entrySemester >= 0) {
+    futureSheet.getRange(absoluteRow, futureIdx.entrySemester + 1).setValue(entrySemester);
+  }
+  if (futureIdx.messageId >= 0 && messageId) {
+    futureSheet.getRange(absoluteRow, futureIdx.messageId + 1).setValue(messageId);
+  }
+
+  const rga = futureIdx.rga >= 0 ? String(row[futureIdx.rga] || "").trim() : "";
+  if (rga && members_currentHasRga_(currentSheet, rga)) {
+    if (futureIdx.status >= 0) {
+      futureSheet.getRange(absoluteRow, futureIdx.status + 1).setValue(SETTINGS.values.active);
+    }
+    if (futureIdx.processStatus >= 0) {
+      futureSheet.getRange(absoluteRow, futureIdx.processStatus + 1).setValue(SETTINGS.values.integrated);
+    }
+    if (futureIdx.notes >= 0) {
+      futureSheet.getRange(absoluteRow, futureIdx.notes + 1).setValue("Membro jÃ¡ existente em Membros Atuais; linha de espera marcada como integrada.");
+    }
+    return;
+  }
+
+  const currentLastCol = currentSheet.getLastColumn();
+  const currentHeaders = currentSheet.getRange(1, 1, 1, currentLastCol).getValues()[0].map(h => String(h || "").trim());
+
+  const newCurrentRow = members_buildCurrentRowFromFutureRow_(
+    row,
+    futureHeaders,
+    currentHeaders,
+    entrySemester,
+    {
+      sourceFormulas: rowFormulas,
+      integratedAt: acceptedAt
+    }
+  );
+
+  const newRowIndex = currentSheet.getLastRow() + 1;
+  currentSheet.appendRow(newCurrentRow);
+
+  const currentIdx = members_getHeaderMap_(currentHeaders);
+  const integratedAtIdx = members_findHeaderIndexByAliases_(
+    currentIdx,
+    members_getHeaderAliases_("current", "integratedAt"),
+    { notFoundValue: -1 }
+  );
+  if (integratedAtIdx != null && integratedAtIdx >= 0) {
+    currentSheet.getRange(newRowIndex, integratedAtIdx + 1).setValue(acceptedAt);
+  }
+
+  GEAPA_CORE.coreSyncMembersCurrentDerivedFields();
+
+  if (futureIdx.status >= 0) {
+    futureSheet.getRange(absoluteRow, futureIdx.status + 1).setValue(SETTINGS.values.active);
+  }
+  if (futureIdx.processStatus >= 0) {
+    futureSheet.getRange(absoluteRow, futureIdx.processStatus + 1).setValue(SETTINGS.values.integrated);
+  }
+  if (futureIdx.notes >= 0) {
+    futureSheet.getRange(absoluteRow, futureIdx.notes + 1).setValue("Membro integrado em Membros Atuais.");
+  }
+
+  const fromEmail = futureIdx.email >= 0 ? String(row[futureIdx.email] || "").trim() : "";
+  const name = futureIdx.name >= 0 ? String(row[futureIdx.name] || "").trim() : "";
+
+  if (fromEmail) {
+    members_sendHtmlEmailCompat_({
+      to: fromEmail,
+      subject: SETTINGS.finalEmail.subject,
+      htmlBody: buildMembersFinalEmailHtml_(name, SETTINGS.finalEmail.whatsappGroupLink)
+    });
+  }
 }

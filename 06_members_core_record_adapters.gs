@@ -22,7 +22,7 @@ function members_readRecordsByKey_(key, opts) {
   opts = opts || {};
 
   if (members_coreCanReadRecords_()) {
-    return GEAPA_CORE.coreReadRecordsByKey(key, opts);
+    return (GEAPA_CORE.coreReadRecordsByKey(key, opts) || []).map(members_backfillRecordAliases_);
   }
 
   var sh = members_sheetByKey_(key);
@@ -46,7 +46,7 @@ function members_readRecordsByKey_(key, opts) {
       obj[headers[c]] = row[c];
     }
     obj.__rowNumber = startRow + i;
-    out.push(obj);
+    out.push(members_backfillRecordAliases_(obj));
   }
 
   return out;
