@@ -235,13 +235,20 @@ function members_analyzeChapaRow_(sheet, rowIndex, headers, ctx) {
           ? String(members_getCurrentField_(viceResult.member, "name")).trim()
           : viceName;
 
-      members_sendHtmlEmailCompat_({
-        to: recipients,
-        subject: approved ? SETTINGS.election.emailApprovedSubject : SETTINGS.election.emailRejectedSubject,
-        htmlBody: approved
-          ? buildMembersChapaApprovedEmailHtml_(emailPresidentName, emailViceName)
-          : buildMembersChapaRejectedEmailHtml_(emailPresidentName, emailViceName, chapaReasons)
-      });
+      members_queueEntryFlowOutgoing_(
+        members_buildChapaOutgoingContract_({
+          rowIndex: rowIndex,
+          refDate: new Date(),
+          identifier: members_buildChapaCorrelationIdentifier_(rowIndex, presidentRga, viceRga),
+          presidentName: emailPresidentName,
+          viceName: emailViceName,
+          presidentRga: presidentRga,
+          viceRga: viceRga,
+          approved: approved,
+          reasons: chapaReasons,
+          recipients: recipients
+        })
+      );
 
       members_writeChapaCellByHeader_(
         sheet,
@@ -532,6 +539,122 @@ function members_buildChapaRecipients_(submitterEmail, presidentEmail, viceEmail
   return members_uniqueEmailsCompat_([submitterEmail, presidentEmail, viceEmail]);
 }
 
+function members_buildChapaCorrelationIdentifier_(rowIndex, presidentRga, viceRga) {
+  const pres = members_normalizeDigits_(presidentRga || "");
+  const vice = members_normalizeDigits_(viceRga || "");
+  const pair = [pres || "SEM-PRES", vice || "SEM-VICE"].join("-");
+  return "CHAPA-" + String(rowIndex || "") + "-" + pair;
+}
+
+function members_buildChapaCorrelationKey_(ctx, stage) {
+  members_assertInviteRendererCore_();
+
+  return GEAPA_CORE.coreMailBuildCorrelationKey("MEM", {
+    businessId: String((ctx.refDate || new Date()).getFullYear()) + "-" + ctx.identifier,
+    flowCode: "CHP",
+    stage: String(stage || "ANL").trim().toUpperCase()
+  });
+}
+
+function members_buildChapaOutgoingContract_(ctx) {
+  const isApproved = ctx.approved === true;
+  const subjectHuman = isApproved
+    ? SETTINGS.election.emailApprovedSubject
+    : SETTINGS.election.emailRejectedSubject;
+  const reasons = Array.isArray(ctx.reasons) ? ctx.reasons.filter(Boolean) : [];
+  const blocks = isApproved
+    ? [{
+        title: "Resultado da análise",
+        text: "O deferimento foi realizado com base nos critérios objetivos previstos para a inscrição de chapas."
+      }]
+    : [{
+        title: "Motivos identificados",
+        items: reasons.map(function(reason) {
+          return { value: String(reason || "").trim() };
+        })
+      }];
+
+  if (!isApproved) {
+    blocks.push({
+      title: "Próximo passo",
+      text: "Caso a Diretoria permita retificação ou nova composição, uma nova chapa poderá ser submetida à análise."
+    });
+  }
+
+  return {
+    moduleName: "MEMBROS",
+    templateKey: "GEAPA_CLASSICO",
+    correlationKey: members_buildChapaCorrelationKey_(ctx, isApproved ? "DEF" : "IND"),
+    entityType: "CHAPA",
+    entityId: ctx.identifier,
+    flowCode: "CHP",
+    stage: isApproved ? "DEF" : "IND",
+    to: ctx.recipients,
+    cc: "",
+    bcc: "",
+    subjectHuman: subjectHuman,
+    payload: {
+      title: subjectHuman,
+      subtitle: "Fluxo eleitoral do GEAPA",
+      introText:
+        "Olá!\n\n" +
+        "A inscrição da chapa composta por " + ctx.presidentName + " (Presidente) e " + ctx.viceName + " (Vice-Presidente) foi " +
+        (isApproved ? "DEFERIDA" : "INDEFERIDA") + ".",
+      blocks: blocks
+    },
+    priority: "NORMAL",
+    sendAfter: "",
+    metadata: {
+      rowIndex: ctx.rowIndex,
+      presidentRga: ctx.presidentRga,
+      viceRga: ctx.viceRga,
+      notificationType: isApproved ? "CHAPA_APPROVED" : "CHAPA_REJECTED"
+    }
+  };
+}
+
+function members_buildElectedChapaOutgoingContract_(ctx) {
+  return {
+    moduleName: "MEMBROS",
+    templateKey: "GEAPA_CLASSICO",
+    correlationKey: members_buildChapaCorrelationKey_(ctx, "ELE"),
+    entityType: "CHAPA",
+    entityId: ctx.identifier,
+    flowCode: "CHP",
+    stage: "ELE",
+    to: ctx.recipients,
+    cc: "",
+    bcc: "",
+    subjectHuman: SETTINGS.election.electedEmailSubject,
+    payload: {
+      title: SETTINGS.election.electedEmailSubject,
+      subtitle: "Fluxo eleitoral do GEAPA",
+      introText:
+        "Olá, " + ctx.presidentName + " e " + ctx.viceName + "!\n\n" +
+        "Parabenizamos a chapa de vocês pela aprovação no processo eleitoral do GEAPA.",
+      blocks: [
+        {
+          title: "Transição da diretoria",
+          text: "Com a definição da nova gestão, daremos início ao processo de transição da diretoria."
+        },
+        {
+          title: "Próximos passos",
+          text: "Solicitamos que a chapa eleita já comece a definir os nomes dos membros que ocuparão os demais cargos da Diretoria, especialmente os cargos de secretaria e comunicação, para que a composição da nova gestão possa ser organizada com antecedência."
+        }
+      ],
+      footerNote: "Em breve, a Diretoria vigente alinhará os próximos passos da transição."
+    },
+    priority: "NORMAL",
+    sendAfter: "",
+    metadata: {
+      rowIndex: ctx.rowIndex,
+      presidentRga: ctx.presidentRga,
+      viceRga: ctx.viceRga,
+      notificationType: "CHAPA_ELECTED"
+    }
+  };
+}
+
 function buildMembersChapaApprovedEmailHtml_(presidentName, viceName) {
   const pres = escapeMembersHtml_(presidentName || "Presidente");
   const vice = escapeMembersHtml_(viceName || "Vice");
@@ -699,11 +822,18 @@ function members_sendElectedChapaEmail_(chapaSheet, rowIndex, idx, president, vi
   const presidentName = president && members_getCurrentField_(president, "name") ? String(members_getCurrentField_(president, "name")).trim() : "Presidente";
   const viceName = vice && members_getCurrentField_(vice, "name") ? String(members_getCurrentField_(vice, "name")).trim() : "Vice-Presidente";
 
-  members_sendHtmlEmailCompat_({
-    to: recipients,
-    subject: SETTINGS.election.electedEmailSubject,
-    htmlBody: buildMembersElectedChapaEmailHtml_(presidentName, viceName)
-  });
+  members_queueEntryFlowOutgoing_(
+    members_buildElectedChapaOutgoingContract_({
+      rowIndex: rowIndex,
+      refDate: new Date(),
+      identifier: members_buildChapaCorrelationIdentifier_(rowIndex, president ? members_getCurrentField_(president, "rga") : "", vice ? members_getCurrentField_(vice, "rga") : ""),
+      presidentName: presidentName,
+      viceName: viceName,
+      presidentRga: president ? members_getCurrentField_(president, "rga") : "",
+      viceRga: vice ? members_getCurrentField_(vice, "rga") : "",
+      recipients: recipients
+    })
+  );
 
   members_writeChapaCellByHeader_(
     chapaSheet,

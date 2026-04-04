@@ -136,6 +136,7 @@ timeoutDays: 7,
 
   finalEmail: Object.freeze({
     subject: "Sua entrada no GEAPA foi confirmada",
+    templateKey: "GEAPA_CLASSICO",
     whatsappGroupLink: "https://chat.whatsapp.com/E0mtWYO04jAJqWboob1jDu?mode=gi_t"
   }),
 
