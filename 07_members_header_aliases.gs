@@ -64,6 +64,7 @@ const MEMBERS_HEADER_ALIASES = Object.freeze({
     phone: Object.freeze(["Telefone", "TELEFONE"]),
     email: Object.freeze(["Email", "E-mail", "EMAIL"]),
     birthDate: Object.freeze(["Data de nascimento", "DATA_NASCIMENTO"]),
+    sex: Object.freeze(["Sexo", "SEXO"]),
     instagram: Object.freeze(["@ Instagram", "INSTAGRAM"]),
     naturality: Object.freeze(["Naturalidade", "NATURALIDADE"]),
     academicHistory: Object.freeze([

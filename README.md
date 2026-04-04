@@ -227,3 +227,41 @@ O módulo depende do core para:
 - mudanças feitas por script não disparam `onEdit`; por isso o convite do `Aprovado imediato` é enviado diretamente na importação;
 - a integração em `MEMBERS_ATUAIS` só acontece após aceite explícito, exceto nos fluxos administrativos de offboarding;
 - quando a Library `GEAPA-CORE` for atualizada com novas APIs consumidas por este módulo, é necessário atualizar a versão da Library no Apps Script se o projeto estiver preso em versão fixa.
+
+---
+
+## UX operacional das planilhas
+
+O modulo agora possui uma camada reaplicavel de UX para as principais abas operacionais:
+
+- `MEMBERS_FUTURO`
+- `MEMBERS_ATUAIS`
+- `MEMBERS_HIST`
+- `SELETIVO_INSCRICAO`
+- `SELETIVO_AVALIACAO`
+- `ELEICOES_CHAPAS_INSCRICAO`
+
+Recursos aplicados, em modo best effort:
+
+- linha 1 congelada;
+- filtro na linha 1;
+- notas curtas nos cabecalhos;
+- agrupamento visual de colunas por cores;
+- compactacao visual de colunas longas;
+- listas suspensas nas colunas fechadas, quando a aba permitir.
+
+Funcoes publicas:
+
+- `applyMembersSheetUx()`
+- `reapplyMembersSheetUx()`
+- `applyMembersFutureSheetUx()`
+- `applyMembersCurrentSheetUx()`
+- `applyMembersHistorySheetUx()`
+- `applyMembersSeletivoSheetUx()`
+- `applyMembersChapasSheetUx()`
+
+Observacoes:
+
+- a UX nao altera a logica do modulo;
+- a UX nao entra automaticamente nos fluxos de convite, integracao, seletivo ou chapas;
+- em abas no formato de tabela, operacoes incompatíveis podem ser puladas sem quebrar a execucao.

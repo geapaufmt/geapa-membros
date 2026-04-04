@@ -173,6 +173,10 @@ function members_buildHistoryRowFromCurrentAndOffboard_(currentRow, currentHeade
       output[idx] = members_pickValue_(currentRow, currentMap, ["data de nascimento"]);
       return;
     }
+    if (members_histHeaderMatches_(header, ["Sexo", "SEXO"])) {
+      output[idx] = members_pickValue_(currentRow, currentMap, ["sexo"]);
+      return;
+    }
     if (members_histHeaderMatches_(header, "Instagram")) {
       output[idx] = members_pickValue_(currentRow, currentMap, ["instagram", "@ instagram"]);
       return;
