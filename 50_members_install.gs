@@ -10,6 +10,7 @@ const MEMBERS_TRIGGERS = Object.freeze([
   { fn: "members_processInvitationTimeouts", type: "timeHours", hours: 12 },
   { fn: "members_importFromSeletivoResults", type: "timeMinutes", minutes: 10 },
   { fn: "members_processPendingChapas", type: "timeMinutes", minutes: 5 },
+  { fn: "members_processCancelledChapas", type: "timeMinutes", minutes: 5 },
   { fn: "members_processElectedChapas", type: "timeMinutes", minutes: 5 }
 ]);
 
