@@ -50,18 +50,18 @@ Fluxo:
 
 - reage a `Status do processo = Enviar e-mail` em `MEMBERS_FUTURO`;
 - monta uma `correlationKey` do fluxo de convite;
-- renderiza o HTML institucional via `GEAPA-CORE`;
-- envia o convite por e-mail com assunto final padronizado em `[GEAPA][CHAVE]`;
+- enfileira o convite na `MAIL_SAIDA` central;
+- o `GEAPA-CORE` renderiza o HTML institucional, monta o assunto final em `[GEAPA][CHAVE]` e envia tecnicamente;
 - grava `Data envio convite`;
 - grava `ThreadId convite`;
 - marca `Status do processo = E-mail enviado`.
 
 Piloto atual:
 
-- apenas o convite inicial de ingresso foi integrado ao renderer institucional do core;
+- o convite inicial de ingresso agora nasce na `MAIL_SAIDA` e passa a ter saida oficial no Mail Hub;
 - o modulo continua dono do conteudo de negocio do convite;
 - o layout, o assunto final, a assinatura institucional e o slogan vigente da diretoria passam a ser montados pelo `GEAPA-CORE`;
-- processamento de respostas `ACEITO` e `RECUSO` ainda permanece no fluxo antigo.
+- processamento de respostas `ACEITO` e `RECUSO` segue no modulo, mas ja pode consumir `MAIL_EVENTOS` quando a central estiver alimentada.
 
 ### 3. Processamento de respostas
 
@@ -77,21 +77,21 @@ Fluxo:
 - identifica a última mensagem válida do candidato;
 - trata `ACEITO` e `RECUSO`;
 - registra `Data resposta` e `MessageId resposta`;
-- envia os e-mails de confirmação correspondentes.
+- enfileira na `MAIL_SAIDA` os e-mails de confirmação correspondentes.
 
 Se `ACEITO`:
 
 - calcula `Semestre de entrada`;
 - integra em `MEMBERS_ATUAIS`;
 - sincroniza campos derivados via `GEAPA_CORE`;
-- envia e-mail final com link do grupo.
+- enfileira o e-mail final institucional com o link do grupo.
 
 Se `RECUSO`:
 
 - marca `Status = Desclassificado`;
 - marca `Status do processo = Recusou`;
 - registra motivo em `Observações do processo`, quando houver;
-- envia e-mail confirmando a recusa.
+- enfileira e-mail institucional confirmando a recusa.
 
 ### 4. Timeout de convites
 
@@ -105,8 +105,12 @@ Fluxo:
 - marca `Status = Desclassificado`;
 - marca `Status do processo = Prazo expirado`;
 - registra observação;
-- envia e-mail de encerramento.
+- enfileira e-mail institucional de encerramento.
 
+
+Observação institucional:
+
+- o link do grupo do WhatsApp usado no e-mail final de integração passa a ser lido de DADOS_OFICIAIS_GEAPA.LINK_GRUPO_WHATSAPP, com fallback para a configuração local apenas se esse campo oficial estiver vazio.
 ### 5. Offboarding homologado
 
 Arquivo principal:
@@ -133,7 +137,7 @@ Fluxo:
 - valida elegibilidade de presidente e vice em `MEMBERS_ATUAIS`;
 - analisa inscrição de chapa;
 - registra resultados;
-- envia comunicações de deferimento/indeferimento/eleição;
+- enfileira na `MAIL_SAIDA` as comunicações de deferimento, indeferimento e eleição;
 - apoia o registro da diretoria vigente.
 
 ---

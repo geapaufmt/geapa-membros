@@ -212,6 +212,228 @@ function members_extractEmail_(from) {
   return members_extractEmailCompat_(from);
 }
 
+function members_assertLifecycleOutboxCore_() {
+  if (
+    !members_coreHas_("coreMailQueueOutgoing") ||
+    !members_coreHas_("coreMailProcessOutbox")
+  ) {
+    throw new Error("GEAPA-CORE sem suporte completo para MAIL_SAIDA no fluxo de membros.");
+  }
+}
+
+function members_getOfficialGroupConfigRecord_() {
+  if (!members_coreHas_("coreReadRecordsByKey")) return {};
+
+  try {
+    const records = GEAPA_CORE.coreReadRecordsByKey("DADOS_OFICIAIS_GEAPA", {
+      skipBlankRows: true
+    });
+    return records && records.length ? (records[0] || {}) : {};
+  } catch (err) {
+    return {};
+  }
+}
+
+function members_getOfficialWhatsAppGroupLink_() {
+  const officialRecord = members_getOfficialGroupConfigRecord_();
+  const officialLink = String(officialRecord.LINK_GRUPO_WHATSAPP || "").trim();
+  return officialLink || String((SETTINGS.finalEmail && SETTINGS.finalEmail.whatsappGroupLink) || "").trim();
+}
+
+function members_formatLifecycleDate_(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (!(date instanceof Date) || isNaN(date.getTime())) return "";
+
+  if (members_coreHas_("coreFormatDate")) {
+    return GEAPA_CORE.coreFormatDate(date, Session.getScriptTimeZone(), "dd/MM/yyyy");
+  }
+
+  return Utilities.formatDate(date, Session.getScriptTimeZone(), "dd/MM/yyyy");
+}
+
+function members_buildEntryFlowContextFromRow_(row, futureIdx, rowIndex, refDate) {
+  const eventDate = refDate instanceof Date ? refDate : new Date();
+  const name = futureIdx.name >= 0 ? String(row[futureIdx.name] || "").trim() : "";
+  const email = futureIdx.email >= 0 ? String(row[futureIdx.email] || "").trim() : "";
+  const rga = futureIdx.rga >= 0 ? String(row[futureIdx.rga] || "").trim() : "";
+  const identifier = members_buildInviteCorrelationIdentifier_({
+    rowIndex: rowIndex,
+    name: name,
+    email: email,
+    rga: rga
+  });
+
+  return Object.freeze({
+    rowIndex: rowIndex,
+    refDate: eventDate,
+    name: name,
+    email: email,
+    rga: rga,
+    identifier: identifier,
+    entityId: rga || identifier
+  });
+}
+
+function members_buildEntryFlowCorrelationKey_(ctx, stage) {
+  members_assertInviteRendererCore_();
+
+  return GEAPA_CORE.coreMailBuildCorrelationKey("MEM", {
+    businessId: String(ctx.refDate.getFullYear()) + "-" + ctx.identifier,
+    flowCode: "CNV",
+    stage: String(stage || "CAND").trim().toUpperCase()
+  });
+}
+
+function members_queueEntryFlowOutgoing_(contract) {
+  if (!contract || !String(contract.to || "").trim()) return null;
+
+  members_assertLifecycleOutboxCore_();
+  const queueResult = GEAPA_CORE.coreMailQueueOutgoing(contract);
+
+  try {
+    GEAPA_CORE.coreMailProcessOutbox();
+  } catch (err) {}
+
+  return queueResult;
+}
+
+function members_buildAcceptedFinalOutgoingContract_(ctx, acceptedAt) {
+  const safeName = String(ctx.name || "").trim() || "membro(a)";
+  const whatsappLink = members_getOfficialWhatsAppGroupLink_();
+  const subjectHuman = String((SETTINGS.finalEmail && SETTINGS.finalEmail.subject) || "Sua entrada no GEAPA foi confirmada").trim();
+  const formattedIntegrationDate = members_formatLifecycleDate_(acceptedAt || ctx.refDate);
+  const blocks = [
+    {
+      title: "Próximos passos",
+      text: "Sua integração foi concluída com sucesso e você já pode acompanhar as atividades e comunicações do grupo."
+    }
+  ];
+
+  return {
+    moduleName: "MEMBROS",
+    templateKey: String((SETTINGS.finalEmail && SETTINGS.finalEmail.templateKey) || "GEAPA_CLASSICO").trim() || "GEAPA_CLASSICO",
+    correlationKey: members_buildEntryFlowCorrelationKey_(ctx, "INTEGRADO"),
+    entityType: "MEMBRO",
+    entityId: ctx.entityId,
+    flowCode: "CNV",
+    stage: "INTEGRADO",
+    to: ctx.email,
+    cc: "",
+    bcc: "",
+    subjectHuman: subjectHuman,
+    payload: {
+      title: subjectHuman,
+      subtitle: "Ingresso confirmado no GEAPA",
+      introText:
+        "Olá, " + safeName + "!\n\n" +
+        "Sua entrada no GEAPA foi confirmada e você já foi integrado(a) oficialmente ao grupo.",
+      blocks: blocks,
+      cta: whatsappLink ? {
+        label: "Entrar no grupo do WhatsApp",
+        url: whatsappLink,
+        helper: "Use este botão para entrar no grupo oficial do GEAPA."
+      } : null,
+      footerNote: formattedIntegrationDate
+        ? ("Data de integração: " + formattedIntegrationDate + ".")
+        : ""
+    },
+    priority: "NORMAL",
+    sendAfter: "",
+    metadata: {
+      rowIndex: ctx.rowIndex,
+      rga: ctx.rga,
+      email: ctx.email,
+      name: ctx.name,
+      notificationType: "FINAL_ACCEPTANCE"
+    }
+  };
+}
+
+function members_buildRefusalOutgoingContract_(ctx, refusalReason) {
+  const safeName = String(ctx.name || "").trim() || "candidato(a)";
+  const subjectHuman = String((SETTINGS.refusalEmail && SETTINGS.refusalEmail.subject) || "Confirmação de recusa de ingresso no GEAPA").trim();
+  const blocks = refusalReason
+    ? [{
+        title: "Motivo informado",
+        text: String(refusalReason || "").trim()
+      }]
+    : [];
+
+  return {
+    moduleName: "MEMBROS",
+    templateKey: String((SETTINGS.refusalEmail && SETTINGS.refusalEmail.templateKey) || "GEAPA_CLASSICO").trim() || "GEAPA_CLASSICO",
+    correlationKey: members_buildEntryFlowCorrelationKey_(ctx, "RECUSOU"),
+    entityType: "MEMBRO",
+    entityId: ctx.entityId,
+    flowCode: "CNV",
+    stage: "RECUSOU",
+    to: ctx.email,
+    cc: "",
+    bcc: "",
+    subjectHuman: subjectHuman,
+    payload: {
+      title: subjectHuman,
+      subtitle: "Fluxo de ingresso no GEAPA",
+      introText:
+        "Olá, " + safeName + "!\n\n" +
+        "Recebemos sua resposta e confirmamos a sua recusa em ingressar no GEAPA neste processo seletivo.",
+      blocks: blocks,
+      footerNote: "Caso deseje participar futuramente, será necessário realizar inscrição e participação em um novo processo seletivo."
+    },
+    priority: "NORMAL",
+    sendAfter: "",
+    metadata: {
+      rowIndex: ctx.rowIndex,
+      rga: ctx.rga,
+      email: ctx.email,
+      name: ctx.name,
+      notificationType: "REFUSAL_CONFIRMATION"
+    }
+  };
+}
+
+function members_buildTimeoutOutgoingContract_(ctx) {
+  const safeName = String(ctx.name || "").trim() || "candidato(a)";
+  const subjectHuman = String((SETTINGS.timeoutEmail && SETTINGS.timeoutEmail.subject) || "Prazo encerrado para ingresso no GEAPA").trim();
+
+  return {
+    moduleName: "MEMBROS",
+    templateKey: String((SETTINGS.timeoutEmail && SETTINGS.timeoutEmail.templateKey) || "GEAPA_CLASSICO").trim() || "GEAPA_CLASSICO",
+    correlationKey: members_buildEntryFlowCorrelationKey_(ctx, "EXPIRADO"),
+    entityType: "MEMBRO",
+    entityId: ctx.entityId,
+    flowCode: "CNV",
+    stage: "EXPIRADO",
+    to: ctx.email,
+    cc: "",
+    bcc: "",
+    subjectHuman: subjectHuman,
+    payload: {
+      title: subjectHuman,
+      subtitle: "Fluxo de ingresso no GEAPA",
+      introText:
+        "Olá, " + safeName + "!\n\n" +
+        "O prazo para resposta ao convite de ingresso no GEAPA foi encerrado.",
+      blocks: [
+        {
+          title: "Prazo finalizado",
+          text: "Como não houve manifestação dentro do período de " + SETTINGS.timeoutDays + " dias, seu convite foi finalizado e sua participação neste processo foi encerrada."
+        }
+      ],
+      footerNote: "Caso deseje ingressar futuramente, será necessário participar de um novo processo seletivo."
+    },
+    priority: "NORMAL",
+    sendAfter: "",
+    metadata: {
+      rowIndex: ctx.rowIndex,
+      rga: ctx.rga,
+      email: ctx.email,
+      name: ctx.name,
+      notificationType: "INVITATION_TIMEOUT"
+    }
+  };
+}
+
 /**
  * Email final após integração.
  *
@@ -264,11 +486,10 @@ function members_markFutureAsRefused_(futureSheet, absoluteRow, futureIdx, messa
   }
 
   if (email) {
-    members_sendHtmlEmailCompat_({
-      to: email,
-      subject: SETTINGS.refusalEmail.subject,
-      htmlBody: buildMembersRefusalEmailHtml_(name)
-    });
+    const ctx = members_buildEntryFlowContextFromRow_(row, futureIdx, absoluteRow, now);
+    members_queueEntryFlowOutgoing_(
+      members_buildRefusalOutgoingContract_(ctx, refusalReason)
+    );
   }
 }
 
@@ -361,14 +582,12 @@ function members_integrateAcceptedFutureMember_(futureSheet, currentSheet, absol
   }
 
   const fromEmail = futureIdx.email >= 0 ? String(row[futureIdx.email] || "").trim() : "";
-  const name = futureIdx.name >= 0 ? String(row[futureIdx.name] || "").trim() : "";
 
   if (fromEmail) {
-    members_sendHtmlEmailCompat_({
-      to: fromEmail,
-      subject: SETTINGS.finalEmail.subject,
-      htmlBody: buildMembersFinalEmailHtml_(name, SETTINGS.finalEmail.whatsappGroupLink)
-    });
+    const ctx = members_buildEntryFlowContextFromRow_(row, futureIdx, absoluteRow, acceptedAt);
+    members_queueEntryFlowOutgoing_(
+      members_buildAcceptedFinalOutgoingContract_(ctx, acceptedAt)
+    );
   }
 }
 
@@ -432,11 +651,10 @@ function members_processInvitationTimeouts() {
     }
 
     if (email) {
-      members_sendHtmlEmailCompat_({
-        to: email,
-        subject: SETTINGS.timeoutEmail.subject,
-        htmlBody: buildMembersTimeoutEmailHtml_(name)
-      });
+      const ctx = members_buildEntryFlowContextFromRow_(row, idx, absoluteRow, now);
+      members_queueEntryFlowOutgoing_(
+        members_buildTimeoutOutgoingContract_(ctx)
+      );
     }
   }
 }
@@ -712,13 +930,11 @@ function members_integrateAcceptedFutureMember_(futureSheet, currentSheet, absol
   }
 
   const fromEmail = futureIdx.email >= 0 ? String(row[futureIdx.email] || "").trim() : "";
-  const name = futureIdx.name >= 0 ? String(row[futureIdx.name] || "").trim() : "";
 
   if (fromEmail) {
-    members_sendHtmlEmailCompat_({
-      to: fromEmail,
-      subject: SETTINGS.finalEmail.subject,
-      htmlBody: buildMembersFinalEmailHtml_(name, SETTINGS.finalEmail.whatsappGroupLink)
-    });
+    const ctx = members_buildEntryFlowContextFromRow_(row, futureIdx, absoluteRow, acceptedAt);
+    members_queueEntryFlowOutgoing_(
+      members_buildAcceptedFinalOutgoingContract_(ctx, acceptedAt)
+    );
   }
 }

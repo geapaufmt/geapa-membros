@@ -339,9 +339,10 @@ function members_importFromSeletivoResults_v2() {
     var emailPrincipal =
       members_normalizeEmail_(insc['Email (OBS: Este será utilizado para a comunicação oficial do grupo, portanto coloque seu principal email).']) ||
       members_normalizeEmail_(insc['Endereço de e-mail']);
+    var persistedRga = String(insc['RGA'] || '').trim();
 
-    if (members_futureIndexHasRgaOrEmail_v2_(futureIdentityIndex, rga, emailPrincipal)) {
-      Logger.log('V2: candidato já existe em MEMBERS_FUTURO. RGA=' + rga + ' | Email=' + emailPrincipal);
+    if (members_futureIndexHasRgaOrEmail_v2_(futureIdentityIndex, persistedRga, emailPrincipal)) {
+      Logger.log('V2: candidato já existe em MEMBERS_FUTURO. RGA=' + persistedRga + ' | Email=' + emailPrincipal);
       members_markAvaliacaoImportada_(av.__rowNumber);
       return;
     }
@@ -357,7 +358,7 @@ function members_importFromSeletivoResults_v2() {
 
     var payload = members_buildFutureRowFromInscricao_(insc, processStatus);
     members_appendObjectByHeaders_(futureSheet, payload);
-    members_registerFutureIdentity_v2_(futureIdentityIndex, rga, emailPrincipal);
+    members_registerFutureIdentity_v2_(futureIdentityIndex, persistedRga, emailPrincipal);
 
     var newRow = futureSheet.getLastRow();
 
