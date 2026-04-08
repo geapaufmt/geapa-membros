@@ -251,6 +251,28 @@ function members_formatLifecycleDate_(value) {
   return Utilities.formatDate(date, Session.getScriptTimeZone(), "dd/MM/yyyy");
 }
 
+function members_appendIngressLifecycleEvent_(payload) {
+  if (!members_coreHas_("coreAppendMemberLifecycleEvent")) return null;
+
+  try {
+    return GEAPA_CORE.coreAppendMemberLifecycleEvent({
+      rga: payload.rga,
+      eventType: 'INGRESSO',
+      eventDate: payload.acceptedAt,
+      eventStatus: 'HOMOLOGADO',
+      sourceModule: 'geapa-membros',
+      sourceKey: SETTINGS.futureKey,
+      sourceRow: payload.futureRowNumber,
+      memberName: payload.memberName,
+      memberEmail: payload.memberEmail,
+      notes: payload.notes || ''
+    });
+  } catch (err) {
+    Logger.log('members_appendIngressLifecycleEvent_ erro: ' + (err && err.message ? err.message : err));
+    return null;
+  }
+}
+
 function members_buildEntryFlowContextFromRow_(row, futureIdx, rowIndex, refDate) {
   const eventDate = refDate instanceof Date ? refDate : new Date();
   const name = futureIdx.name >= 0 ? String(row[futureIdx.name] || "").trim() : "";
@@ -916,6 +938,15 @@ function members_integrateAcceptedFutureMember_(futureSheet, currentSheet, absol
   if (integratedAtIdx != null && integratedAtIdx >= 0) {
     currentSheet.getRange(newRowIndex, integratedAtIdx + 1).setValue(acceptedAt);
   }
+
+  members_appendIngressLifecycleEvent_({
+    rga: rga,
+    acceptedAt: acceptedAt,
+    futureRowNumber: absoluteRow,
+    memberName: futureIdx.name >= 0 ? String(row[futureIdx.name] || '').trim() : '',
+    memberEmail: futureIdx.email >= 0 ? String(row[futureIdx.email] || '').trim() : '',
+    notes: 'Ingresso integrado automaticamente em MEMBERS_ATUAIS.'
+  });
 
   GEAPA_CORE.coreSyncMembersCurrentDerivedFields();
 
