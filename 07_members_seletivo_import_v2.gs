@@ -75,6 +75,9 @@ function members_importFromSeletivoResults_v2() {
   if (!futureSheet) {
     throw new Error('Não foi possível localizar MEMBERS_FUTURO.');
   }
+  var futureHeaders = futureSheet.getRange(1, 1, 1, futureSheet.getLastColumn()).getValues()[0]
+    .map(function(h) { return String(h || '').trim(); });
+  var futureIdentityIndex = members_buildFutureIdentityIndex_v2_();
 
   pendentes.forEach(function(av) {
     var rga = String(av['RGA'] || '').trim();
@@ -91,7 +94,7 @@ function members_importFromSeletivoResults_v2() {
       members_normalizeEmail_(insc['Email (OBS: Este será utilizado para a comunicação oficial do grupo, portanto coloque seu principal email).']) ||
       members_normalizeEmail_(insc['Endereço de e-mail']);
 
-    if (members_futureHasRgaOrEmail_v2_(rga, emailPrincipal)) {
+    if (members_futureIndexHasRgaOrEmail_v2_(futureIdentityIndex, rga, emailPrincipal)) {
       Logger.log('V2: candidato já existe em MEMBERS_FUTURO. RGA=' + rga + ' | Email=' + emailPrincipal);
       members_markAvaliacaoImportada_(av.__rowNumber);
       return;
@@ -108,10 +111,9 @@ function members_importFromSeletivoResults_v2() {
 
     var payload = members_buildFutureRowFromInscricao_(insc, processStatus);
     members_appendObjectByHeaders_(futureSheet, payload);
+    members_registerFutureIdentity_v2_(futureIdentityIndex, rga, emailPrincipal);
 
     var newRow = futureSheet.getLastRow();
-    var futureHeaders = futureSheet.getRange(1, 1, 1, futureSheet.getLastColumn()).getValues()[0]
-      .map(function(h) { return String(h || '').trim(); });
 
     if (processStatus === SETTINGS.values.sendEmail) {
       members_sendInviteByRow_(futureSheet, newRow, futureHeaders);
@@ -124,4 +126,36 @@ function members_importFromSeletivoResults_v2() {
       (payload['Nome'] || '') + ' | processo=' + processStatus
     );
   });
+}
+
+function members_buildFutureIdentityIndex_v2_() {
+  var records = members_readRecordsByKey_(SETTINGS.futureKey);
+  var index = {
+    byRga: {},
+    byEmail: {}
+  };
+
+  records.forEach(function(obj) {
+    members_registerFutureIdentity_v2_(index, obj['RGA'], obj['EMAIL']);
+  });
+
+  return index;
+}
+
+function members_registerFutureIdentity_v2_(index, rga, email) {
+  var rgaNorm = String(rga || '').trim();
+  var emailNorm = members_normalizeEmail_(email);
+
+  if (rgaNorm) index.byRga[rgaNorm] = true;
+  if (emailNorm) index.byEmail[emailNorm] = true;
+}
+
+function members_futureIndexHasRgaOrEmail_v2_(index, rga, email) {
+  var rgaNorm = String(rga || '').trim();
+  var emailNorm = members_normalizeEmail_(email);
+
+  return !!(
+    (rgaNorm && index.byRga[rgaNorm]) ||
+    (emailNorm && index.byEmail[emailNorm])
+  );
 }

@@ -38,7 +38,7 @@ function members_processAcceptanceReplies() {
 
   for (let i = 0; i < futureValues.length; i++) {
     const absoluteRow = i + 2;
-    const row = futureSheet.getRange(absoluteRow, 1, 1, futureLastCol).getValues()[0];
+    const row = futureValues[i];
 
     const processStatus = futureIdx.processStatus >= 0
       ? String(row[futureIdx.processStatus] || "").trim()
@@ -108,8 +108,7 @@ function members_processAcceptanceReplies() {
  * @return {string}
  */
 function members_getEntrySemesterFromAcceptanceDate_(acceptanceDate) {
-  const semesterObj = GEAPA_CORE.coreGetSemesterForDate(acceptanceDate);
-  return semesterObj && semesterObj.id ? semesterObj.id : "";
+  return members_getSemesterId_(acceptanceDate, { plainText: false });
 }
 
 /**
