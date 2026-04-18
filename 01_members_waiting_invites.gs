@@ -76,22 +76,230 @@ function members_sendInviteByRow_(sheet, rowIndex, headers) {
     return;
   }
 
-  const trackedSend = members_sendTrackedEmail_({
-    to: email,
-    subject: SETTINGS.inviteEmail.subject,
-    htmlBody: buildMembersInviteEmailHtml_(name),
-    newerThanDays: SETTINGS.timeoutDays
+  const inviteCtx = {
+    rowIndex: rowIndex,
+    name: name,
+    email: email,
+    rga: idx.rga >= 0 ? String(row[idx.rga] || "").trim() : ""
+  };
+  const queueContract = members_buildInviteOutgoingContract_(inviteCtx);
+  const queueResult = members_queueInviteOutgoing_(queueContract);
+  const outboxRecord = members_getInviteOutboxRecordOrThrow_(queueResult);
+
+  members_syncFutureInviteFromOutbox_(sheet, rowIndex, idx, outboxRecord);
+}
+
+function members_assertInviteRendererCore_() {
+  const requiredFns = [
+    "coreMailBuildCorrelationKey",
+    "coreMailBuildOutgoingDraft"
+  ];
+
+  requiredFns.forEach(function(fnName) {
+    if (!members_coreHas_(fnName)) {
+      throw new Error(
+        'O piloto do convite institucional exige GEAPA-CORE com a funcao "' + fnName + '" exportada.'
+      );
+    }
   });
-  const threadId = String((trackedSend && trackedSend.threadId) || "").trim();
+}
+
+function members_assertInviteOutboxCore_() {
+  const requiredFns = [
+    "coreMailQueueOutgoing",
+    "coreMailProcessOutbox",
+    "coreReadRecordsByKey"
+  ];
+
+  requiredFns.forEach(function(fnName) {
+    if (!members_coreHas_(fnName)) {
+      throw new Error(
+        'O convite via MAIL_SAIDA exige GEAPA-CORE com a funcao "' + fnName + '" exportada.'
+      );
+    }
+  });
+}
+
+function members_slugCorrelationToken_(value) {
+  return members_normalizeTextCompat_(value, {
+    removeAccents: true,
+    collapseWhitespace: true,
+    caseMode: "lower"
+  })
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function members_buildInviteCorrelationIdentifier_(ctx) {
+  const rgaDigits = members_onlyDigitsCompat_(ctx.rga);
+  if (rgaDigits) return rgaDigits;
+
+  const normalizedEmail = members_normalizeEmailCompat_(ctx.email);
+  if (normalizedEmail) {
+    const emailLocalPart = String(normalizedEmail.split("@")[0] || "").trim();
+    const emailToken = members_slugCorrelationToken_(emailLocalPart);
+    if (emailToken) return emailToken;
+  }
+
+  const nameToken = members_slugCorrelationToken_(ctx.name);
+  if (nameToken) return nameToken;
+
+  return "linha-" + String(ctx.rowIndex || "");
+}
+
+function members_buildInviteCorrelationKey_(ctx) {
+  members_assertInviteRendererCore_();
 
   const now = new Date();
+  const identifier = members_buildInviteCorrelationIdentifier_(ctx);
+
+  return GEAPA_CORE.coreMailBuildCorrelationKey("MEM", {
+    businessId: String(now.getFullYear()) + "-" + identifier,
+    flowCode: "CNV",
+    stage: "CAND"
+  });
+}
+
+function members_getInviteSubjectHuman_() {
+  return "Confirmação de interesse em ingressar no GEAPA";
+}
+
+function members_buildInviteOutgoingContract_(ctx) {
+  members_assertInviteRendererCore_();
+
+  const safeName = String(ctx.name || "").trim() || "candidato(a)";
+  const correlationKey = members_buildInviteCorrelationKey_(ctx);
+  const subjectHuman = members_getInviteSubjectHuman_();
+  const identifier = members_buildInviteCorrelationIdentifier_(ctx);
+
+  return {
+    moduleName: "MEMBROS",
+    templateKey: "GEAPA_OPERACIONAL",
+    correlationKey: correlationKey,
+    entityType: "MEMBRO",
+    entityId: String(ctx.rga || "").trim() || identifier,
+    flowCode: "CNV",
+    stage: "CAND",
+    to: ctx.email,
+    cc: "",
+    bcc: "",
+    subjectHuman: subjectHuman,
+    payload: {
+      title: subjectHuman,
+      subtitle: "Fluxo de ingresso no GEAPA",
+      introText:
+        "Olá, " + safeName + "!\n\n" +
+        "Entramos em contato para confirmar se você deseja ingressar oficialmente no GEAPA.",
+      blocks: [
+        {
+          title: "Como responder",
+          text: "Responda este mesmo e-mail com uma das palavras abaixo.",
+          items: [
+            {
+              label: "Para confirmar seu ingresso",
+              value: "ACEITO"
+            },
+            {
+              label: "Se não desejar ingressar neste momento",
+              value: "RECUSO"
+            }
+          ]
+        },
+        {
+          title: "Observações",
+          text: "Você pode escrever outras informações junto da resposta, se quiser.",
+          items: [
+            { value: "ACEITO, muito obrigado!" },
+            { value: "RECUSO, pois no momento não conseguirei participar." }
+          ]
+        }
+      ],
+      footerNote:
+        "Assim que sua resposta for processada, daremos continuidade ao procedimento correspondente."
+    },
+    metadata: {
+      rowIndex: ctx.rowIndex,
+      rga: String(ctx.rga || "").trim(),
+      email: String(ctx.email || "").trim(),
+      name: safeName,
+      recipientName: safeName
+    }
+  };
+}
+
+function members_buildInviteOutgoingDraft_(ctx) {
+  members_assertInviteRendererCore_();
+  return GEAPA_CORE.coreMailBuildOutgoingDraft(
+    members_buildInviteOutgoingContract_(ctx)
+  );
+}
+
+function members_queueInviteOutgoing_(contract) {
+  members_assertInviteOutboxCore_();
+
+  const queueResult = GEAPA_CORE.coreMailQueueOutgoing(contract);
+  GEAPA_CORE.coreMailProcessOutbox();
+  return queueResult;
+}
+
+function members_findOutboxRecordBySaidaId_(saidaId) {
+  const targetId = String(saidaId || "").trim();
+  if (!targetId) return null;
+
+  const records = GEAPA_CORE.coreReadRecordsByKey("MAIL_SAIDA", {
+    headerRow: 1,
+    startRow: 2
+  });
+
+  for (let i = records.length - 1; i >= 0; i--) {
+    const record = records[i] || {};
+    if (String(record["Id Saida"] || "").trim() === targetId) {
+      return record;
+    }
+  }
+
+  return null;
+}
+
+function members_getInviteOutboxRecordOrThrow_(queueResult) {
+  const saidaId = String((queueResult && queueResult.saidaId) || "").trim();
+  if (!saidaId) {
+    throw new Error("Nao foi possivel identificar o Id Saida do convite na MAIL_SAIDA.");
+  }
+
+  const outboxRecord = members_findOutboxRecordBySaidaId_(saidaId);
+  if (!outboxRecord) {
+    throw new Error("Saida do convite nao encontrada na MAIL_SAIDA: " + saidaId);
+  }
+
+  const status = String(outboxRecord["Status Envio"] || "").trim().toUpperCase();
+  if (status === "ERRO") {
+    throw new Error(
+      "Falha no envio do convite via MAIL_SAIDA: " +
+      String(outboxRecord["Ultimo Erro"] || "Erro nao informado")
+    );
+  }
+
+  if (status !== "ENVIADO") {
+    throw new Error(
+      "Convite ainda nao foi enviado pela MAIL_SAIDA. Status atual: " + (status || "VAZIO")
+    );
+  }
+
+  return outboxRecord;
+}
+
+function members_syncFutureInviteFromOutbox_(sheet, rowIndex, idx, outboxRecord) {
+  const sentAt = outboxRecord["Enviado Em"] || new Date();
+  const threadId = String(outboxRecord["Id Thread Gmail"] || "").trim();
 
   if (idx.processStatus >= 0) {
     sheet.getRange(rowIndex, idx.processStatus + 1).setValue(SETTINGS.values.emailed);
   }
 
   if (idx.sentAt >= 0) {
-    sheet.getRange(rowIndex, idx.sentAt + 1).setValue(now);
+    sheet.getRange(rowIndex, idx.sentAt + 1).setValue(sentAt);
   }
 
   if (idx.threadId >= 0 && threadId) {
@@ -134,24 +342,23 @@ function buildMembersInviteEmailHtml_(name) {
  */
 function getMembersHeaderIndexMap_(headers) {
   const normalizedMap = members_buildHeaderMap_(headers, { normalize: true, oneBased: false });
-  const find = function(label) {
-    const key = normalizeMembersText_(label);
-    return Object.prototype.hasOwnProperty.call(normalizedMap, key) ? normalizedMap[key] : -1;
+  const find = function(aliases) {
+    return members_findHeaderIndexByAliases_(normalizedMap, aliases, { notFoundValue: -1 });
   };
 
   return {
-    name: find(SETTINGS.headers.name),
-    email: find(SETTINGS.headers.email),
-    rga: find("rga"),
-    status: find(SETTINGS.headers.status),
-    processStatus: find(SETTINGS.headers.processStatus),
-    sentAt: find(SETTINGS.headers.sentAt),
-    repliedAt: find(SETTINGS.headers.repliedAt),
-    notes: find(SETTINGS.headers.notes),
-    entrySemester: find(SETTINGS.headers.entrySemester),
-    threadId: find(SETTINGS.headers.threadId),
-    messageId: find(SETTINGS.headers.messageId),
-    integratedAt: find(SETTINGS.headers.integratedAt)
+    name: find(members_getHeaderAliases_("future", "name")),
+    email: find(members_getHeaderAliases_("future", "email")),
+    rga: find(members_getHeaderAliases_("future", "rga")),
+    status: find(members_getHeaderAliases_("future", "status")),
+    processStatus: find(members_getHeaderAliases_("future", "processStatus")),
+    sentAt: find(members_getHeaderAliases_("future", "sentAt")),
+    repliedAt: find(members_getHeaderAliases_("future", "repliedAt")),
+    notes: find(members_getHeaderAliases_("future", "notes")),
+    entrySemester: find(members_getHeaderAliases_("future", "entrySemester")),
+    threadId: find(members_getHeaderAliases_("future", "threadId")),
+    messageId: find(members_getHeaderAliases_("future", "messageId")),
+    integratedAt: find(members_getHeaderAliases_("future", "integratedAt"))
   };
 }
 
@@ -162,7 +369,10 @@ function getMembersHeaderIndexMap_(headers) {
  * @return {string}
  */
 function normalizeMembersText_(value) {
-  return String(value || "").trim().toLowerCase();
+  return members_normalizeTextCompat_(value, {
+    collapseWhitespace: true,
+    caseMode: "lower"
+  });
 }
 
 /**

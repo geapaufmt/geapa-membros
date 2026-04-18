@@ -30,6 +30,8 @@ function members_setupChapasSheet_() {
     SETTINGS.election.chapaHeaders.analyzedAt,
     SETTINGS.election.chapaHeaders.finalResult,
     SETTINGS.election.chapaHeaders.finalResultAt,
+    SETTINGS.election.chapaHeaders.cancelledAt,
+    SETTINGS.election.chapaHeaders.cancelledEmailSent,
     SETTINGS.election.chapaHeaders.emailSent,
     SETTINGS.election.chapaHeaders.boardRegistered,
     SETTINGS.election.chapaHeaders.electedEmailSent,
@@ -39,12 +41,18 @@ function members_setupChapasSheet_() {
 
   const lastCol = sheet.getLastColumn();
   const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || "").trim());
+  const normalizedExistingHeaders = {};
+
+  headers.forEach(function(header) {
+    normalizedExistingHeaders[members_normalizeChapaHeaderKey_(header)] = true;
+  });
 
   let appendAt = lastCol;
   required.forEach(col => {
-    if (headers.indexOf(col) < 0) {
+    if (!normalizedExistingHeaders[members_normalizeChapaHeaderKey_(col)]) {
       appendAt++;
       sheet.getRange(1, appendAt).setValue(col);
+      normalizedExistingHeaders[members_normalizeChapaHeaderKey_(col)] = true;
     }
   });
 }
@@ -119,6 +127,43 @@ function members_reprocessAllChapas() {
   }
 }
 
+function members_processCancelledChapas() {
+  members_assertCore_();
+  members_setupChapasSheet_();
+
+  const chapaSheet = GEAPA_CORE.coreGetSheetByKey(SETTINGS.election.chapaKey);
+  if (!chapaSheet) {
+    throw new Error("Não foi possível localizar a planilha de chapas.");
+  }
+
+  const lastRow = chapaSheet.getLastRow();
+  const lastCol = chapaSheet.getLastColumn();
+  if (lastRow < 2) return;
+
+  const headers = chapaSheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || "").trim());
+  const idx = members_getChapaHeaderIndexMap_(headers);
+  const values = chapaSheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+
+  for (let i = 0; i < values.length; i++) {
+    const absoluteRow = i + 2;
+    const row = values[i];
+    const finalResult = idx.finalResult >= 0 ? String(row[idx.finalResult] || "").trim() : "";
+    if (normalizeMembersText_(finalResult) !== normalizeMembersText_(SETTINGS.election.statusCancelada)) continue;
+
+    const cancelledAt = idx.cancelledAt >= 0 ? row[idx.cancelledAt] : "";
+    if (!cancelledAt) {
+      members_writeChapaCellByHeader_(chapaSheet, absoluteRow, idx, SETTINGS.election.chapaHeaders.cancelledAt, new Date());
+    }
+
+    const finalResultAt = idx.finalResultAt >= 0 ? row[idx.finalResultAt] : "";
+    if (!finalResultAt) {
+      members_writeChapaCellByHeader_(chapaSheet, absoluteRow, idx, SETTINGS.election.chapaHeaders.finalResultAt, new Date());
+    }
+
+    members_sendCancelledChapaEmail_(chapaSheet, absoluteRow, idx);
+  }
+}
+
 function members_processElectedChapas() {
   members_assertCore_();
   members_setupChapasSheet_();
@@ -161,6 +206,7 @@ function members_processElectedChapas() {
       continue;
     }
 
+    members_markOtherDeferredChapasAsNotElected_(chapaSheet, values, absoluteRow, idx);
     members_registerElectedChapa_(chapaSheet, absoluteRow, headers, ctx);
   }
 }
@@ -183,7 +229,7 @@ function members_analyzeChapaRow_(sheet, rowIndex, headers, ctx) {
   let chapaStatus = SETTINGS.election.statusDeferida;
   const chapaReasons = [];
 
-  if (presidentRga && viceRga && normalizeMembersDigits_(presidentRga) === normalizeMembersDigits_(viceRga)) {
+  if (presidentRga && viceRga && members_normalizeDigits_(presidentRga) === members_normalizeDigits_(viceRga)) {
     chapaStatus = SETTINGS.election.statusIndeferida;
     chapaReasons.push("A mesma pessoa não pode compor simultaneamente os cargos de Presidente e Vice-Presidente.");
   }
@@ -214,34 +260,56 @@ function members_analyzeChapaRow_(sheet, rowIndex, headers, ctx) {
   members_writeChapaCellByHeader_(sheet, rowIndex, idx, SETTINGS.election.chapaHeaders.automaticOpinion, automaticOpinion);
   members_writeChapaCellByHeader_(sheet, rowIndex, idx, SETTINGS.election.chapaHeaders.analyzedAt, new Date());
 
+  const currentFinalResult = idx.finalResult >= 0 ? String(row[idx.finalResult] || "").trim() : "";
+  const currentFinalResultNormalized = normalizeMembersText_(currentFinalResult);
+  const indeferidaNormalized = normalizeMembersText_(SETTINGS.election.statusIndeferida);
+
+  if (normalizeMembersText_(chapaStatus) === indeferidaNormalized) {
+    if (!currentFinalResultNormalized || currentFinalResultNormalized === indeferidaNormalized) {
+      members_writeChapaCellByHeader_(sheet, rowIndex, idx, SETTINGS.election.chapaHeaders.finalResult, SETTINGS.election.statusIndeferida);
+    }
+
+    const currentFinalResultAt = idx.finalResultAt >= 0 ? row[idx.finalResultAt] : "";
+    if (!currentFinalResultAt) {
+      members_writeChapaCellByHeader_(sheet, rowIndex, idx, SETTINGS.election.chapaHeaders.finalResultAt, new Date());
+    }
+  }
+
   const emailSent = idx.emailSent >= 0 ? String(row[idx.emailSent] || "").trim() : "";
   if (normalizeMembersText_(emailSent) !== normalizeMembersText_(SETTINGS.election.emailSentYes)) {
     const recipients = members_buildChapaRecipients_(
       submitterEmail,
-      presidentResult.member ? presidentResult.member["EMAIL"] : "",
-      viceResult.member ? viceResult.member["EMAIL"] : ""
+      presidentResult.member ? members_getCurrentField_(presidentResult.member, "email") : "",
+      viceResult.member ? members_getCurrentField_(viceResult.member, "email") : ""
     );
 
     if (recipients.length) {
       const approved = normalizeMembersText_(chapaStatus) === normalizeMembersText_(SETTINGS.election.statusDeferida);
 
       const emailPresidentName =
-        (presidentResult.member && presidentResult.member["MEMBRO"])
-          ? String(presidentResult.member["MEMBRO"]).trim()
+        (presidentResult.member && members_getCurrentField_(presidentResult.member, "name"))
+          ? String(members_getCurrentField_(presidentResult.member, "name")).trim()
           : presidentName;
 
       const emailViceName =
-        (viceResult.member && viceResult.member["MEMBRO"])
-          ? String(viceResult.member["MEMBRO"]).trim()
+        (viceResult.member && members_getCurrentField_(viceResult.member, "name"))
+          ? String(members_getCurrentField_(viceResult.member, "name")).trim()
           : viceName;
 
-      MailApp.sendEmail({
-        to: recipients.join(","),
-        subject: approved ? SETTINGS.election.emailApprovedSubject : SETTINGS.election.emailRejectedSubject,
-        htmlBody: approved
-          ? buildMembersChapaApprovedEmailHtml_(emailPresidentName, emailViceName)
-          : buildMembersChapaRejectedEmailHtml_(emailPresidentName, emailViceName, chapaReasons)
-      });
+      members_queueEntryFlowOutgoing_(
+        members_buildChapaOutgoingContract_({
+          rowIndex: rowIndex,
+          refDate: new Date(),
+          identifier: members_buildChapaCorrelationIdentifier_(rowIndex, presidentRga, viceRga),
+          presidentName: emailPresidentName,
+          viceName: emailViceName,
+          presidentRga: presidentRga,
+          viceRga: viceRga,
+          approved: approved,
+          reasons: chapaReasons,
+          recipients: recipients
+        })
+      );
 
       members_writeChapaCellByHeader_(
         sheet,
@@ -261,7 +329,7 @@ function members_evaluateChapaCandidate_(targetRole, informedName, informedRga, 
     member: null
   };
 
-  const normalizedRga = normalizeMembersDigits_(informedRga);
+  const normalizedRga = members_normalizeDigits_(informedRga);
   if (!normalizedRga) {
     out.status = SETTINGS.election.statusIndeferida;
     out.reasons.push("RGA não informado.");
@@ -277,19 +345,19 @@ function members_evaluateChapaCandidate_(targetRole, informedName, informedRga, 
 
   out.member = member;
 
-  const memberStatus = normalizeMembersText_(member["Status"]);
+  const memberStatus = normalizeMembersText_(members_getCurrentField_(member, "status"));
   if (memberStatus !== normalizeMembersText_(SETTINGS.values.active)) {
     out.status = SETTINGS.election.statusIndeferida;
     out.reasons.push("O candidato não está com status ativo em MEMBERS_ATUAIS.");
   }
 
-  const semestresNoGrupo = parseInt(String(member["N° de semestres no grupo"] || "").trim(), 10);
-  if (isNaN(semestresNoGrupo) || semestresNoGrupo < 1) {
+  const semestresNoGrupo = members_getChapaCandidateSemesterCount_(member, new Date());
+  if (semestresNoGrupo == null || semestresNoGrupo < 1) {
     out.status = SETTINGS.election.statusIndeferida;
     out.reasons.push("O candidato não possui pelo menos 1 semestre no grupo.");
   }
 
-  const semestreAtual = members_parseSemesterNumber_(member["Semestre atual"]);
+  const semestreAtual = members_parseSemesterNumber_(members_getCurrentField_(member, "currentSemester"));
   if (semestreAtual == null || semestreAtual < 1 || semestreAtual > 7) {
     out.status = SETTINGS.election.statusIndeferida;
     out.reasons.push("O candidato não está entre o 1º e o 7º semestre.");
@@ -323,8 +391,8 @@ function members_evaluateChapaCandidate_(targetRole, informedName, informedRga, 
     );
   }
 
-  if (informedName && member["MEMBRO"]) {
-    const sameName = members_namesAreCompatible_(informedName, member["MEMBRO"]);
+  if (informedName && members_getCurrentField_(member, "name")) {
+    const sameName = members_namesAreCompatible_(informedName, members_getCurrentField_(member, "name"));
     if (!sameName) {
       out.reasons.push("Nome informado diverge parcialmente do nome cadastrado; conferir manualmente.");
     }
@@ -333,12 +401,40 @@ function members_evaluateChapaCandidate_(targetRole, informedName, informedRga, 
   return out;
 }
 
+function members_markOtherDeferredChapasAsNotElected_(sheet, values, electedRowIndex, idx) {
+  const deferidaNormalized = normalizeMembersText_(SETTINGS.election.statusDeferida);
+  const eleitaNormalized = normalizeMembersText_(SETTINGS.election.statusEleita);
+  const naoEleitaNormalized = normalizeMembersText_(SETTINGS.election.statusNaoEleita);
+  const timestamp = new Date();
+
+  (values || []).forEach(function(row, i) {
+    const absoluteRow = i + 2;
+    if (absoluteRow === electedRowIndex) return;
+
+    const chapaStatus = idx.chapaStatus >= 0 ? String(row[idx.chapaStatus] || "").trim() : "";
+    if (normalizeMembersText_(chapaStatus) !== deferidaNormalized) return;
+
+    const finalResult = idx.finalResult >= 0 ? String(row[idx.finalResult] || "").trim() : "";
+    const finalResultNormalized = normalizeMembersText_(finalResult);
+    if (finalResultNormalized === eleitaNormalized) return;
+
+    if (!finalResultNormalized || finalResultNormalized === naoEleitaNormalized) {
+      members_writeChapaCellByHeader_(sheet, absoluteRow, idx, SETTINGS.election.chapaHeaders.finalResult, SETTINGS.election.statusNaoEleita);
+    }
+
+    const finalResultAt = idx.finalResultAt >= 0 ? row[idx.finalResultAt] : "";
+    if (!finalResultAt) {
+      members_writeChapaCellByHeader_(sheet, absoluteRow, idx, SETTINGS.election.chapaHeaders.finalResultAt, timestamp);
+    }
+  });
+}
+
 function members_registerElectedChapa_(chapaSheet, rowIndex, headers, ctx) {
   const idx = members_getChapaHeaderIndexMap_(headers);
   const row = chapaSheet.getRange(rowIndex, 1, 1, chapaSheet.getLastColumn()).getValues()[0];
 
-  const presidentRga = normalizeMembersDigits_(idx.presidentRga >= 0 ? row[idx.presidentRga] : "");
-  const viceRga = normalizeMembersDigits_(idx.viceRga >= 0 ? row[idx.viceRga] : "");
+  const presidentRga = members_normalizeDigits_(idx.presidentRga >= 0 ? row[idx.presidentRga] : "");
+  const viceRga = members_normalizeDigits_(idx.viceRga >= 0 ? row[idx.viceRga] : "");
 
   const president = ctx.membersByRga[presidentRga];
   const vice = ctx.membersByRga[viceRga];
@@ -406,35 +502,21 @@ function members_buildChapaContext_() {
   const membersByRga = {};
   const diretoriaByRga = {};
 
-  if (currentSheet.getLastRow() >= 2) {
-    const currentLastCol = currentSheet.getLastColumn();
-    const headers = currentSheet.getRange(1, 1, 1, currentLastCol).getValues()[0].map(h => String(h || "").trim());
-    const values = currentSheet.getRange(2, 1, currentSheet.getLastRow() - 1, currentLastCol).getValues();
+  members_readSheetRecordsCompat_(currentSheet).forEach(obj => {
+    const rga = members_normalizeDigits_(obj["RGA"]);
+    if (!rga) return;
+    membersByRga[rga] = obj;
+  });
 
-    for (let i = 0; i < values.length; i++) {
-      const obj = members_rowToObject_(headers, values[i]);
-      const rga = normalizeMembersDigits_(obj["RGA"]);
-      if (!rga) continue;
-      membersByRga[rga] = obj;
+  members_readSheetRecordsCompat_(diretoriaSheet).forEach(obj => {
+    const rga = members_normalizeDigits_(obj["RGA"]);
+    if (!rga) return;
+
+    if (!diretoriaByRga[rga]) {
+      diretoriaByRga[rga] = [];
     }
-  }
-
-  if (diretoriaSheet.getLastRow() >= 2) {
-    const dirLastCol = diretoriaSheet.getLastColumn();
-    const headers = diretoriaSheet.getRange(1, 1, 1, dirLastCol).getValues()[0].map(h => String(h || "").trim());
-    const values = diretoriaSheet.getRange(2, 1, diretoriaSheet.getLastRow() - 1, dirLastCol).getValues();
-
-    for (let i = 0; i < values.length; i++) {
-      const obj = members_rowToObject_(headers, values[i]);
-      const rga = normalizeMembersDigits_(obj["RGA"]);
-      if (!rga) continue;
-
-      if (!diretoriaByRga[rga]) {
-        diretoriaByRga[rga] = [];
-      }
-      diretoriaByRga[rga].push(obj);
-    }
-  }
+    diretoriaByRga[rga].push(obj);
+  });
 
   const nextBoard = members_getNextBoardWindow_(boardsSheet);
   const newMandateDays = nextBoard ? members_getInclusiveDaysBetween_(nextBoard.start, nextBoard.end) : 0;
@@ -448,38 +530,51 @@ function members_buildChapaContext_() {
 }
 
 function members_getChapaHeaderIndexMap_(headers) {
-  const map = members_getGenericHeaderMap_(headers);
   const out = {};
+  const normalizedMap = {};
+
+  (headers || []).forEach(function(header, index) {
+    const normalized = members_normalizeChapaHeaderKey_(header);
+    if (!normalized || Object.prototype.hasOwnProperty.call(normalizedMap, normalized)) return;
+    normalizedMap[normalized] = index;
+  });
 
   Object.keys(SETTINGS.election.chapaHeaders).forEach(k => {
     const headerName = SETTINGS.election.chapaHeaders[k];
-    out[k] = map[normalizeMembersText_(headerName)] != null ? map[normalizeMembersText_(headerName)] : -1;
+    const normalizedHeader = members_normalizeChapaHeaderKey_(headerName);
+    out[k] = normalizedMap[normalizedHeader] != null ? normalizedMap[normalizedHeader] : -1;
     out[headerName] = out[k];
+    out[normalizeMembersText_(headerName)] = out[k];
+    out[normalizedHeader] = out[k];
   });
 
   return out;
 }
 
 function members_getGenericHeaderMap_(headers) {
-  const map = {};
-  headers.forEach((h, i) => {
-    map[normalizeMembersText_(h)] = i;
+  return members_buildHeaderMapCompat_(headers, { normalize: true, oneBased: false });
+}
+
+function members_normalizeChapaHeaderKey_(value) {
+  return members_normalizeTextCompat_(value, {
+    removeAccents: true,
+    collapseWhitespace: true,
+    caseMode: "lower"
   });
-  return map;
 }
 
 function members_writeChapaCellByHeader_(sheet, rowIndex, idx, headerName, value) {
-  const col = idx[headerName];
-  if (col == null || col < 0) return;
-  sheet.getRange(rowIndex, col + 1).setValue(value);
-}
+  const normalizedHeader = normalizeMembersText_(headerName);
+  const directIndex = idx && Object.prototype.hasOwnProperty.call(idx, headerName) ? idx[headerName] : -1;
+  const normalizedIndex = idx && Object.prototype.hasOwnProperty.call(idx, normalizedHeader) ? idx[normalizedHeader] : -1;
+  const colIndex = directIndex >= 0 ? directIndex : normalizedIndex;
 
-function members_rowToObject_(headers, row) {
-  const obj = {};
-  headers.forEach((h, i) => {
-    obj[h] = row[i];
-  });
-  return obj;
+  if (colIndex >= 0) {
+    sheet.getRange(rowIndex, colIndex + 1).setValue(value);
+    return true;
+  }
+
+  return members_writeCellByHeaderCompat_(sheet, rowIndex, idx, headerName, value, { oneBased: false });
 }
 
 function members_parseSemesterNumber_(value) {
@@ -489,7 +584,40 @@ function members_parseSemesterNumber_(value) {
   return parseInt(m[1], 10);
 }
 
-function normalizeMembersDigits_(value) {
+function members_getChapaCandidateSemesterCount_(member, referenceDate) {
+  const explicitSemesterCount = members_parseSemesterNumber_(members_getCurrentField_(member, "semesterCount"));
+  if (explicitSemesterCount != null) {
+    return explicitSemesterCount;
+  }
+
+  const integratedAt = members_chapasToDate_(members_getCurrentField_(member, "integratedAt"));
+  if (!integratedAt) {
+    return null;
+  }
+
+  return members_getCompletedSemestersSince_(integratedAt, referenceDate || new Date());
+}
+
+function members_getCompletedSemestersSince_(startValue, endValue) {
+  const start = members_chapasToDate_(startValue);
+  const end = members_chapasToDate_(endValue);
+  if (!start || !end) return null;
+  if (end < start) return 0;
+
+  let totalMonths =
+    (end.getFullYear() - start.getFullYear()) * 12 +
+    (end.getMonth() - start.getMonth());
+
+  if (end.getDate() < start.getDate()) {
+    totalMonths -= 1;
+  }
+
+  if (totalMonths < 0) totalMonths = 0;
+
+  return Math.floor(totalMonths / 6);
+}
+
+function members_normalizeDigits_(value) {
   return String(value || "").replace(/\D/g, "");
 }
 
@@ -511,11 +639,11 @@ function members_getAccumulatedDiretoriaDays_(historyRows, referenceDate) {
   let total = 0;
 
   historyRows.forEach(r => {
-    const start = members_toDate_(r["Data_Início"]);
+    const start = members_chapasToDate_(r["Data_Início"]);
     const end =
-      members_toDate_(r["Data_Fim"]) ||
-      members_toDate_(r["Data_Fim_previsto"]) ||
-      members_toDate_(referenceDate);
+      members_chapasToDate_(r["Data_Fim"]) ||
+      members_chapasToDate_(r["Data_Fim_previsto"]) ||
+      members_chapasToDate_(referenceDate);
 
     if (!start || !end) return;
     if (end < start) return;
@@ -533,7 +661,7 @@ function members_getInclusiveDaysBetween_(start, end) {
   return Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1;
 }
 
-function members_toDate_(value) {
+function members_chapasToDate_(value) {
   if (!value) return null;
   if (Object.prototype.toString.call(value) === "[object Date]" && !isNaN(value.getTime())) {
     return value;
@@ -557,12 +685,174 @@ function members_buildChapaOpinion_(status, reasons) {
 }
 
 function members_buildChapaRecipients_(submitterEmail, presidentEmail, viceEmail) {
-  const set = {};
-  [submitterEmail, presidentEmail, viceEmail].forEach(e => {
-    const email = String(e || "").trim().toLowerCase();
-    if (email) set[email] = true;
+  return members_uniqueEmailsCompat_([submitterEmail, presidentEmail, viceEmail]);
+}
+
+function members_buildChapaCorrelationIdentifier_(rowIndex, presidentRga, viceRga) {
+  const pres = members_normalizeDigits_(presidentRga || "");
+  const vice = members_normalizeDigits_(viceRga || "");
+  const pair = [pres || "SEM-PRES", vice || "SEM-VICE"].join("-");
+  return "CHAPA-" + String(rowIndex || "") + "-" + pair;
+}
+
+function members_buildChapaCorrelationKey_(ctx, stage) {
+  members_assertInviteRendererCore_();
+
+  return GEAPA_CORE.coreMailBuildCorrelationKey("MEM", {
+    businessId: String((ctx.refDate || new Date()).getFullYear()) + "-" + ctx.identifier,
+    flowCode: "CHP",
+    stage: String(stage || "ANL").trim().toUpperCase()
   });
-  return Object.keys(set);
+}
+
+function members_buildChapaOutgoingContract_(ctx) {
+  const isApproved = ctx.approved === true;
+  const subjectHuman = isApproved
+    ? SETTINGS.election.emailApprovedSubject
+    : SETTINGS.election.emailRejectedSubject;
+  const reasons = Array.isArray(ctx.reasons) ? ctx.reasons.filter(Boolean) : [];
+  const formattedReasonItems = reasons.map(function(reason) {
+    const text = String(reason || "").trim();
+    const match = text.match(/^([^:]+:)\s*(.*)$/);
+    if (!match) {
+      return { value: text };
+    }
+
+    return {
+      label: match[1].trim(),
+      value: match[2].trim()
+    };
+  });
+  const blocks = isApproved
+    ? [{
+        title: "Resultado da análise",
+        text: "O deferimento foi realizado com base nos critérios objetivos previstos para a inscrição de chapas."
+      }]
+    : [{
+        title: "Motivos identificados",
+        items: formattedReasonItems
+      }];
+
+  if (!isApproved) {
+    blocks.push({
+      title: "Próximo passo",
+      text: "Os participantes dessa chapa são livres para formarem outras chapas, porém estas serão novamente submetidas à análise automática de critérios."
+    });
+  }
+
+  return {
+    moduleName: "MEMBROS",
+    templateKey: "GEAPA_CLASSICO",
+    correlationKey: members_buildChapaCorrelationKey_(ctx, isApproved ? "DEF" : "IND"),
+    entityType: "CHAPA",
+    entityId: ctx.identifier,
+    flowCode: "CHP",
+    stage: isApproved ? "DEF" : "IND",
+    to: ctx.recipients,
+    cc: "",
+    bcc: "",
+    subjectHuman: subjectHuman,
+    payload: {
+      title: subjectHuman,
+      subtitle: "Fluxo eleitoral do GEAPA",
+      introText:
+        "Olá!\n\n" +
+        "A inscrição da chapa composta por " + ctx.presidentName + " (Presidente) e " + ctx.viceName + " (Vice-Presidente) foi " +
+        (isApproved ? "DEFERIDA" : "INDEFERIDA") + ".",
+      blocks: blocks
+    },
+    priority: "NORMAL",
+    sendAfter: "",
+    metadata: {
+      rowIndex: ctx.rowIndex,
+      presidentRga: ctx.presidentRga,
+      viceRga: ctx.viceRga,
+      notificationType: isApproved ? "CHAPA_APPROVED" : "CHAPA_REJECTED"
+    }
+  };
+}
+
+function members_buildCancelledChapaOutgoingContract_(ctx) {
+  return {
+    moduleName: "MEMBROS",
+    templateKey: "GEAPA_CLASSICO",
+    correlationKey: members_buildChapaCorrelationKey_(ctx, "CAN"),
+    entityType: "CHAPA",
+    entityId: ctx.identifier,
+    flowCode: "CHP",
+    stage: "CAN",
+    to: ctx.recipients,
+    cc: "",
+    bcc: "",
+    subjectHuman: SETTINGS.election.emailCancelledSubject,
+    payload: {
+      title: SETTINGS.election.emailCancelledSubject,
+      subtitle: "Fluxo eleitoral do GEAPA",
+      introText:
+        "Olá!\n\n" +
+        "A chapa composta por " + ctx.presidentName + " (Presidente) e " + ctx.viceName + " (Vice-Presidente) foi cancelada a pedido dos participantes.",
+      blocks: [
+        {
+          title: "Encerramento da inscrição",
+          text: "O cancelamento desta chapa foi registrado no fluxo eleitoral do GEAPA."
+        },
+        {
+          title: "Próximo passo",
+          text: "Os participantes permanecem livres para compor outras chapas, que serão novamente submetidas à análise automática de critérios."
+        }
+      ]
+    },
+    priority: "NORMAL",
+    sendAfter: "",
+    metadata: {
+      rowIndex: ctx.rowIndex,
+      presidentRga: ctx.presidentRga,
+      viceRga: ctx.viceRga,
+      notificationType: "CHAPA_CANCELLED"
+    }
+  };
+}
+
+function members_buildElectedChapaOutgoingContract_(ctx) {
+  return {
+    moduleName: "MEMBROS",
+    templateKey: "GEAPA_CLASSICO",
+    correlationKey: members_buildChapaCorrelationKey_(ctx, "ELE"),
+    entityType: "CHAPA",
+    entityId: ctx.identifier,
+    flowCode: "CHP",
+    stage: "ELE",
+    to: ctx.recipients,
+    cc: "",
+    bcc: "",
+    subjectHuman: SETTINGS.election.electedEmailSubject,
+    payload: {
+      title: SETTINGS.election.electedEmailSubject,
+      subtitle: "Fluxo eleitoral do GEAPA",
+      introText:
+        "Olá, " + ctx.presidentName + " e " + ctx.viceName + "!\n\n" +
+        "Parabenizamos a chapa de vocês pela aprovação no processo eleitoral do GEAPA.",
+      blocks: [
+        {
+          title: "Transição da diretoria",
+          text: "Com a definição da nova gestão, daremos início ao processo de transição da diretoria."
+        },
+        {
+          title: "Próximos passos",
+          text: "Solicitamos que a chapa eleita já comece a definir os nomes dos membros que ocuparão os demais cargos da Diretoria, especialmente os cargos de secretaria e comunicação, para que a composição da nova gestão possa ser organizada com antecedência."
+        }
+      ],
+      footerNote: "Em breve, a Diretoria vigente alinhará os próximos passos da transição."
+    },
+    priority: "NORMAL",
+    sendAfter: "",
+    metadata: {
+      rowIndex: ctx.rowIndex,
+      presidentRga: ctx.presidentRga,
+      viceRga: ctx.viceRga,
+      notificationType: "CHAPA_ELECTED"
+    }
+  };
 }
 
 function buildMembersChapaApprovedEmailHtml_(presidentName, viceName) {
@@ -609,8 +899,8 @@ function members_getNextBoardWindow_(boardsSheet) {
     const start = row[idx[normalizeMembersText_("Início_Mandato")]];
     const end = row[idx[normalizeMembersText_("Fim_Mandato")]];
 
-    const startDate = members_toDate_(start);
-    const endDate = members_toDate_(end);
+    const startDate = members_chapasToDate_(start);
+    const endDate = members_chapasToDate_(end);
     if (!id || !startDate || !endDate) return;
 
     if (startDate.getTime() >= members_startOfDay_(now).getTime()) {
@@ -654,9 +944,9 @@ function members_buildBoardMemberRow_(headers, member, roleName, boardWindow) {
   const arr = new Array(headers.length).fill("");
   const idx = members_getGenericHeaderMap_(headers);
 
-  members_setRowValueIfHeaderExists_(arr, idx, "Nome", member["MEMBRO"] || "");
+  members_setRowValueIfHeaderExists_(arr, idx, "Nome", members_getCurrentField_(member, "name") || "");
   members_setRowValueIfHeaderExists_(arr, idx, "RGA", member["RGA"] || "");
-  members_setRowValueIfHeaderExists_(arr, idx, "E-mail", member["EMAIL"] || "");
+  members_setRowValueIfHeaderExists_(arr, idx, "E-mail", members_getCurrentField_(member, "email") || "");
   members_setRowValueIfHeaderExists_(arr, idx, "Cargo/Função", roleName);
   members_setRowValueIfHeaderExists_(arr, idx, "ID_Diretoria", boardWindow.id);
   members_setRowValueIfHeaderExists_(arr, idx, "Data_Início", boardWindow.start);
@@ -711,6 +1001,47 @@ function members_normalizeName_(value) {
     .trim();
 }
 
+function members_sendCancelledChapaEmail_(chapaSheet, rowIndex, idx) {
+  const row = chapaSheet.getRange(rowIndex, 1, 1, chapaSheet.getLastColumn()).getValues()[0];
+
+  const alreadySent = idx.cancelledEmailSent >= 0 ? String(row[idx.cancelledEmailSent] || "").trim() : "";
+  if (normalizeMembersText_(alreadySent) === normalizeMembersText_(SETTINGS.election.emailSentYes)) {
+    return;
+  }
+
+  const submitterEmail = idx.submitterEmail >= 0 ? String(row[idx.submitterEmail] || "").trim() : "";
+  const presidentName = idx.presidentName >= 0 ? String(row[idx.presidentName] || "").trim() : "Presidente";
+  const viceName = idx.viceName >= 0 ? String(row[idx.viceName] || "").trim() : "Vice-Presidente";
+  const presidentRga = idx.presidentRga >= 0 ? String(row[idx.presidentRga] || "").trim() : "";
+  const viceRga = idx.viceRga >= 0 ? String(row[idx.viceRga] || "").trim() : "";
+
+  const ctx = members_buildChapaContext_();
+  const president = presidentRga ? ctx.membersByRga[members_normalizeDigits_(presidentRga)] : null;
+  const vice = viceRga ? ctx.membersByRga[members_normalizeDigits_(viceRga)] : null;
+  const recipients = members_buildChapaRecipients_(
+    submitterEmail,
+    president ? members_getCurrentField_(president, "email") : "",
+    vice ? members_getCurrentField_(vice, "email") : ""
+  );
+
+  if (!recipients.length) return;
+
+  members_queueEntryFlowOutgoing_(
+    members_buildCancelledChapaOutgoingContract_({
+      rowIndex: rowIndex,
+      refDate: new Date(),
+      identifier: members_buildChapaCorrelationIdentifier_(rowIndex, presidentRga, viceRga),
+      presidentName: president && members_getCurrentField_(president, "name") ? String(members_getCurrentField_(president, "name")).trim() : presidentName,
+      viceName: vice && members_getCurrentField_(vice, "name") ? String(members_getCurrentField_(vice, "name")).trim() : viceName,
+      presidentRga: presidentRga,
+      viceRga: viceRga,
+      recipients: recipients
+    })
+  );
+
+  members_writeChapaCellByHeader_(chapaSheet, rowIndex, idx, SETTINGS.election.chapaHeaders.cancelledEmailSent, SETTINGS.election.emailSentYes);
+}
+
 function members_sendElectedChapaEmail_(chapaSheet, rowIndex, idx, president, vice) {
   const row = chapaSheet.getRange(rowIndex, 1, 1, chapaSheet.getLastColumn()).getValues()[0];
 
@@ -723,20 +1054,27 @@ function members_sendElectedChapaEmail_(chapaSheet, rowIndex, idx, president, vi
 
   const recipients = members_buildChapaRecipients_(
     submitterEmail,
-    president ? president["EMAIL"] : "",
-    vice ? vice["EMAIL"] : ""
+    president ? members_getCurrentField_(president, "email") : "",
+    vice ? members_getCurrentField_(vice, "email") : ""
   );
 
   if (!recipients.length) return;
 
-  const presidentName = president && president["MEMBRO"] ? String(president["MEMBRO"]).trim() : "Presidente";
-  const viceName = vice && vice["MEMBRO"] ? String(vice["MEMBRO"]).trim() : "Vice-Presidente";
+  const presidentName = president && members_getCurrentField_(president, "name") ? String(members_getCurrentField_(president, "name")).trim() : "Presidente";
+  const viceName = vice && members_getCurrentField_(vice, "name") ? String(members_getCurrentField_(vice, "name")).trim() : "Vice-Presidente";
 
-  MailApp.sendEmail({
-    to: recipients.join(","),
-    subject: SETTINGS.election.electedEmailSubject,
-    htmlBody: buildMembersElectedChapaEmailHtml_(presidentName, viceName)
-  });
+  members_queueEntryFlowOutgoing_(
+    members_buildElectedChapaOutgoingContract_({
+      rowIndex: rowIndex,
+      refDate: new Date(),
+      identifier: members_buildChapaCorrelationIdentifier_(rowIndex, president ? members_getCurrentField_(president, "rga") : "", vice ? members_getCurrentField_(vice, "rga") : ""),
+      presidentName: presidentName,
+      viceName: viceName,
+      presidentRga: president ? members_getCurrentField_(president, "rga") : "",
+      viceRga: vice ? members_getCurrentField_(vice, "rga") : "",
+      recipients: recipients
+    })
+  );
 
   members_writeChapaCellByHeader_(
     chapaSheet,

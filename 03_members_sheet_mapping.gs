@@ -22,18 +22,7 @@ function members_getHeaderMap_(headers) {
  * @return {Object<string, number>}
  */
 function members_buildHeaderMap_(headers, opts) {
-  opts = opts || {};
-  const normalize = opts.normalize !== false;
-  const oneBased = opts.oneBased === true;
-
-  const map = {};
-  headers.forEach((h, i) => {
-    const raw = String(h || "").trim();
-    if (!raw) return;
-    const key = normalize ? raw.toLowerCase() : raw;
-    map[key] = oneBased ? i + 1 : i;
-  });
-  return map;
+  return members_buildHeaderMapCompat_(headers, opts || {});
 }
 
 /**
@@ -59,29 +48,29 @@ function members_buildCurrentRowFromFutureRow_(sourceRow, sourceHeaders, targetH
   const targetRow = new Array(targetHeaders.length).fill("");
 
   targetHeaders.forEach((targetHeader, targetIndex) => {
-    const normalizedTarget = String(targetHeader || "").trim().toLowerCase();
+    const normalizedTarget = members_normalizeOffboardingHeader_(targetHeader);
 
     // Nome -> MEMBRO
-    if (normalizedTarget === "membro") {
-      const sourceIdx = sourceMap["nome"];
+    if (members_findHeaderIndexByAliases_({ [normalizedTarget]: targetIndex }, members_getHeaderAliases_("current", "name")) >= 0) {
+      const sourceIdx = members_findHeaderIndexByAliases_(sourceMap, members_getHeaderAliases_("future", "name"));
       if (sourceIdx >= 0) targetRow[targetIndex] = sourceRow[sourceIdx];
       return;
     }
 
     // Status no destino -> Ativo
-    if (normalizedTarget === String(SETTINGS.headers.status).trim().toLowerCase()) {
+    if (members_findHeaderIndexByAliases_({ [normalizedTarget]: targetIndex }, members_getHeaderAliases_("current", "status")) >= 0) {
       targetRow[targetIndex] = SETTINGS.values.active;
       return;
     }
 
     // Semestre de entrada no destino -> valor calculado
-    if (normalizedTarget === String(SETTINGS.headers.entrySemester).trim().toLowerCase()) {
+    if (members_findHeaderIndexByAliases_({ [normalizedTarget]: targetIndex }, members_getHeaderAliases_("current", "entrySemester")) >= 0) {
       targetRow[targetIndex] = entrySemesterFull || "";
       return;
     }
 
     // Cargo/função atual no destino -> Membro
-    if (normalizedTarget === "cargo/função atual") {
+    if (members_findHeaderIndexByAliases_({ [normalizedTarget]: targetIndex }, members_getHeaderAliases_("current", "currentRole")) >= 0) {
       targetRow[targetIndex] = "Membro";
       return;
     }
@@ -104,15 +93,78 @@ function members_buildCurrentRowFromFutureRow_(sourceRow, sourceHeaders, targetH
  * @return {boolean}
  */
 function members_currentHasRga_(sheet, rga) {
-  const lastRow = sheet.getLastRow();
-  const lastCol = sheet.getLastColumn();
-  if (lastRow < 2 || !rga) return false;
+  if (!rga) return false;
 
-  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || "").trim());
-  const map = members_getHeaderMap_(headers);
-  const rgaIdx = map["rga"];
-  if (rgaIdx == null || rgaIdx < 0) return false;
+  const records = members_readSheetRecordsCompat_(sheet);
+  const target = String(rga || "").trim();
 
-  const values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
-  return values.some(row => String(row[rgaIdx] || "").trim() === String(rga || "").trim());
+  return records.some(record => String(record["RGA"] || "").trim() === target);
+}
+
+function members_getFutureSourceCell_(sourceRow, sourceFormulas, sourceMap, aliasKey) {
+  const aliases = members_getHeaderAliases_("future", aliasKey);
+  const sourceIdx = members_findHeaderIndexByAliases_(sourceMap, aliases);
+  if (sourceIdx < 0) return "";
+
+  const formulaValue = sourceFormulas && sourceFormulas[sourceIdx];
+  if (formulaValue != null && String(formulaValue).trim()) return formulaValue;
+  return sourceRow[sourceIdx];
+}
+
+function members_buildCurrentRowFromFutureRow_(sourceRow, sourceHeaders, targetHeaders, entrySemesterFull, opts) {
+  opts = opts || {};
+  const sourceMap = members_getHeaderMap_(sourceHeaders);
+  const sourceFormulas = Array.isArray(opts.sourceFormulas) ? opts.sourceFormulas : null;
+  const integratedAt = opts.integratedAt || "";
+  const targetRow = new Array(targetHeaders.length).fill("");
+
+  targetHeaders.forEach((targetHeader, targetIndex) => {
+    const normalizedTarget = members_normalizeOffboardingHeader_(targetHeader);
+
+    if (members_findHeaderIndexByAliases_({ [normalizedTarget]: targetIndex }, members_getHeaderAliases_("current", "name")) >= 0) {
+      targetRow[targetIndex] = members_getFutureSourceCell_(sourceRow, sourceFormulas, sourceMap, "name");
+      return;
+    }
+
+    if (members_findHeaderIndexByAliases_({ [normalizedTarget]: targetIndex }, members_getHeaderAliases_("current", "status")) >= 0) {
+      targetRow[targetIndex] = SETTINGS.values.active;
+      return;
+    }
+
+    if (members_findHeaderIndexByAliases_({ [normalizedTarget]: targetIndex }, members_getHeaderAliases_("current", "entrySemester")) >= 0) {
+      targetRow[targetIndex] = entrySemesterFull || "";
+      return;
+    }
+
+    if (members_findHeaderIndexByAliases_({ [normalizedTarget]: targetIndex }, members_getHeaderAliases_("current", "integratedAt")) >= 0) {
+      targetRow[targetIndex] = integratedAt || "";
+      return;
+    }
+
+    if (members_findHeaderIndexByAliases_({ [normalizedTarget]: targetIndex }, members_getHeaderAliases_("current", "currentRole")) >= 0) {
+      targetRow[targetIndex] = "Membro";
+      return;
+    }
+
+    const aliasKeys = Object.keys(MEMBERS_HEADER_ALIASES.current || {});
+    for (let i = 0; i < aliasKeys.length; i++) {
+      const aliasKey = aliasKeys[i];
+      const currentAliases = members_getHeaderAliases_("current", aliasKey);
+      if (members_findHeaderIndexByAliases_({ [normalizedTarget]: targetIndex }, currentAliases) >= 0) {
+        targetRow[targetIndex] = members_getFutureSourceCell_(sourceRow, sourceFormulas, sourceMap, aliasKey);
+        return;
+      }
+    }
+
+    const sourceIdx = sourceMap[normalizedTarget];
+    if (sourceIdx >= 0) {
+      const formulaValue = sourceFormulas && sourceFormulas[sourceIdx];
+      targetRow[targetIndex] =
+        formulaValue != null && String(formulaValue).trim()
+          ? formulaValue
+          : sourceRow[sourceIdx];
+    }
+  });
+
+  return targetRow;
 }

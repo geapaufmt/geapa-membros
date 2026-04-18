@@ -89,6 +89,8 @@ const SETTINGS = Object.freeze({
   statusDeferida: "DEFERIDA",
   statusIndeferida: "INDEFERIDA",
   statusEleita: "ELEITA",
+  statusNaoEleita: "NÃO ELEITA",
+  statusCancelada: "CANCELADA",
 
   emailSentYes: "SIM",
   emailSentNo: "NÃO",
@@ -100,6 +102,7 @@ const SETTINGS = Object.freeze({
 
   emailApprovedSubject: "Inscrição de chapa deferida - GEAPA",
   emailRejectedSubject: "Inscrição de chapa indeferida - GEAPA",
+  emailCancelledSubject: "Confirmação de cancelamento de chapa - GEAPA",
 
   chapaHeaders: Object.freeze({
     submittedAt: "Carimbo de data/hora",
@@ -120,6 +123,8 @@ const SETTINGS = Object.freeze({
     analyzedAt: "Data/Hora da análise",
     finalResult: "Resultado final",
     finalResultAt: "Data/Hora resultado final",
+    cancelledAt: "Data/Hora cancelamento",
+    cancelledEmailSent: "E-mail cancelamento enviado?",
     emailSent: "E-mail resultado enviado?",
     boardRegistered: "Diretoria registrada?",
     internalNote: "Observação da diretoria",
@@ -136,6 +141,7 @@ timeoutDays: 7,
 
   finalEmail: Object.freeze({
     subject: "Sua entrada no GEAPA foi confirmada",
+    templateKey: "GEAPA_CLASSICO",
     whatsappGroupLink: "https://chat.whatsapp.com/E0mtWYO04jAJqWboob1jDu?mode=gi_t"
   }),
 

@@ -1,391 +1,267 @@
-# GEAPA – Módulo de Gestão de Membros
+# GEAPA - Módulo de Gestão de Membros
 
-Este módulo faz parte do sistema automatizado do GEAPA e é responsável por gerenciar o fluxo de entrada de novos membros a partir da lista de **Membros em Espera**, incluindo a importação de candidatos aprovados vindos do processo seletivo.
-
-O módulo depende da library **GEAPA-CORE**.
+Módulo responsável pelo fluxo de entrada, integração, histórico de saída e rotinas auxiliares de membros do GEAPA. O projeto depende da Library `GEAPA-CORE`.
 
 ---
 
-# Visão geral do módulo
+## O que o módulo faz hoje
 
-O módulo atualmente realiza:
-
-- controle de candidatos em `Membros em Espera`
-- envio automático de convite de ingresso por e-mail
-- processamento de respostas `ACEITO` / `RECUSO`
-- integração automática em `Membros Atuais`
-- encerramento de convites por prazo expirado
-- importação de aprovados do processo seletivo para `MEMBERS_FUTURO`
-
----
-
-# Arquitetura geral
-
-O fluxo completo do módulo é:
-
-```text
-Processo seletivo
-→ Resultado final na avaliação
-→ Importação para Membros em Espera
-→ Convite por e-mail
-→ Resposta do candidato
-→ Integração em Membros Atuais
-```
+- controla candidatos em `MEMBERS_FUTURO`;
+- envia convites de ingresso por e-mail;
+- processa respostas `ACEITO` e `RECUSO`;
+- integra membros aceitos em `MEMBERS_ATUAIS`;
+- encerra convites por prazo expirado;
+- importa aprovados do processo seletivo para `MEMBERS_FUTURO`;
+- registra saídas homologadas em `MEMBERS_HIST` e remove de `MEMBERS_ATUAIS`;
+- valida e registra fluxos de chapas/diretoria.
 
 ---
 
-# Integração com o processo seletivo
+## Fluxos principais
 
-O módulo de membros se integra com o módulo de seletivo usando duas fontes.
+### 1. Importação do seletivo
 
-## 1. SELETIVO_AVALIACAO
+Entrada pública:
 
-Usada para decidir o destino do candidato.
+- `members_importFromSeletivoResults()`
 
-Resultados aceitos:
+Fluxo:
 
-- `Aprovado imediato`
-- `Aprovado em espera`
+1. lê pendências em `SELETIVO_AVALIACAO`;
+2. busca dados cadastrais em `SELETIVO_INSCRICAO`;
+3. monta a linha de `MEMBERS_FUTURO`;
+4. evita duplicidade por `RGA` e `EMAIL`;
+5. marca a avaliação como processada;
+6. se o resultado for `Aprovado imediato`, dispara o convite automaticamente;
+7. se o resultado for `Aprovado em espera`, mantém `Status do processo = Aguardando vaga`.
 
-## 2. SELETIVO_INSCRICAO
+Observação estrutural:
 
-Usada como fonte dos dados cadastrais completos do candidato.
+- o fluxo do seletivo foi consolidado em `05_members_seletivo_import.gs`;
+- `07_members_seletivo_import_v2.gs` não define mais funções globais de importação.
 
-Os dados da inscrição são utilizados para preencher `MEMBERS_FUTURO`.
+### 2. Convite de ingresso
 
----
+Arquivo principal:
 
-# Regras de importação do seletivo
+- `01_members_waiting_invites.gs`
 
-## Se `Resultado = Aprovado imediato`
+Fluxo:
 
-O candidato é inserido em `MEMBERS_FUTURO` com:
+- reage a `Status do processo = Enviar e-mail` em `MEMBERS_FUTURO`;
+- monta uma `correlationKey` do fluxo de convite;
+- enfileira o convite na `MAIL_SAIDA` central;
+- o `GEAPA-CORE` renderiza o HTML institucional, monta o assunto final em `[GEAPA][CHAVE]` e envia tecnicamente;
+- grava `Data envio convite`;
+- grava `ThreadId convite`;
+- marca `Status do processo = E-mail enviado`.
 
-- `Status = Em Espera`
-- `Status do processo = Enviar e-mail`
+Piloto atual:
 
-Logo após a inserção, o sistema dispara diretamente o envio do convite, sem depender de edição manual da planilha.
+- o convite inicial de ingresso agora nasce na `MAIL_SAIDA` e passa a ter saida oficial no Mail Hub;
+- o modulo continua dono do conteudo de negocio do convite;
+- o layout, o assunto final, a assinatura institucional e o slogan vigente da diretoria passam a ser montados pelo `GEAPA-CORE`;
+- processamento de respostas `ACEITO` e `RECUSO` segue no modulo, mas ja pode consumir `MAIL_EVENTOS` quando a central estiver alimentada.
 
-## Se `Resultado = Aprovado em espera`
+### 3. Processamento de respostas
 
-O candidato é inserido em `MEMBERS_FUTURO` com:
+Arquivo principal:
 
-- `Status = Em Espera`
-- `Status do processo = Aguardando vaga`
+- `02_members_acceptance_processing.gs`
 
-Nesse caso, o convite não é enviado automaticamente.
+Fluxo:
 
----
+- lê respostas do Gmail a partir do `ThreadId convite`;
+- quando o Mail Hub central já tiver ingerido a resposta, prefere consumir `MAIL_EVENTOS` por `threadId`;
+- se não houver evento pendente suficiente na central, faz fallback seguro para a leitura direta do Gmail;
+- identifica a última mensagem válida do candidato;
+- trata `ACEITO` e `RECUSO`;
+- registra `Data resposta` e `MessageId resposta`;
+- enfileira na `MAIL_SAIDA` os e-mails de confirmação correspondentes.
 
-# Normalização de dados
+Se `ACEITO`:
 
-Na importação do seletivo, o módulo normaliza vários campos antes de gravar em `MEMBERS_FUTURO`.
+- calcula `Semestre de entrada`;
+- integra em `MEMBERS_ATUAIS`;
+- sincroniza campos derivados via `GEAPA_CORE`;
+- enfileira o e-mail final institucional com o link do grupo.
 
-## Campos tratados
+Se `RECUSO`:
 
-- CPF
-- Telefone
-- Email
-- Instagram
-- Data de nascimento
-- Naturalidade
+- marca `Status = Desclassificado`;
+- marca `Status do processo = Recusou`;
+- registra motivo em `Observações do processo`, quando houver;
+- enfileira e-mail institucional confirmando a recusa.
 
-## Campos clicáveis
-
-Alguns campos são gravados como fórmulas clicáveis no Google Sheets:
-
-- `TELEFONE` → link para WhatsApp
-- `EMAIL` → link `mailto:`
-- `@ Instagram` → link para o perfil
-
----
-
-# Planilhas utilizadas
-
-## 1. MEMBERS_FUTURO
-
-Controle de candidatos em espera e do processo de convite.
-
-Campos relevantes:
-
-- Nome
-- EMAIL
-- RGA
-- Status
-- Status do processo
-- Data envio convite
-- Data resposta
-- ThreadId convite
-- MessageId resposta
-- Observações do processo
-- Semestre de entrada
-
-## 2. MEMBERS_ATUAIS
-
-Recebe automaticamente novos membros integrados.
-
-Campos relevantes:
-
-- MEMBRO
-- RGA
-- EMAIL
-- TELEFONE
-- DATA DE NASCIMENTO
-- Semestre de entrada
-- Status
-- Cargo/função atual
-- Data integração
-
-## 3. MEMBERS_HIST
-
-Histórico de membros desligados ou encerrados.
-
----
-
-# Fluxo funcional
-
-## 1. Importação do seletivo
+### 4. Timeout de convites
 
 Função principal:
 
-```text
-members_importFromSeletivoResults()
-```
+- `members_processInvitationTimeouts()`
 
-Ela:
+Fluxo:
 
-- lê candidatos pendentes em `SELETIVO_AVALIACAO`
-- busca dados completos em `SELETIVO_INSCRICAO`
-- monta a linha para `MEMBERS_FUTURO`
-- evita duplicidade por RGA / EMAIL
-- marca a avaliação como processada
+- identifica convites sem resposta além de `timeoutDays`;
+- marca `Status = Desclassificado`;
+- marca `Status do processo = Prazo expirado`;
+- registra observação;
+- enfileira e-mail institucional de encerramento.
 
----
 
-## 2. Convite por e-mail
+Observação institucional:
 
-Quando `Status do processo = Enviar e-mail`, o sistema:
+- o link do grupo do WhatsApp usado no e-mail final de integração passa a ser lido de DADOS_OFICIAIS_GEAPA.LINK_GRUPO_WHATSAPP, com fallback para a configuração local apenas se esse campo oficial estiver vazio.
+### 5. Offboarding homologado
 
-- envia o convite
-- registra a data de envio
-- salva o `ThreadId do convite`
-- altera o status do processo para `E-mail enviado`
+Arquivo principal:
 
-Esse fluxo pode acontecer:
+- `06_members_offboarding.gs`
 
-- manualmente via onEdit
-- automaticamente logo após a importação do seletivo em casos de `Aprovado imediato`
+Fluxo:
 
----
+- recebe payload de desligamento homologado vindo de outro módulo;
+- localiza o membro em `MEMBERS_ATUAIS`;
+- registra a saída em `MEMBERS_HIST`;
+- preserva dados como solicitação, homologação, semestre de saída e motivo;
+- remove o membro de `MEMBERS_ATUAIS`;
+- executa sincronização de campos derivados após a remoção.
 
-## 3. Resposta do candidato
+### 6. Chapas e diretoria
 
-O candidato pode responder ao e-mail com:
+Arquivo principal:
 
-- `ACEITO`
-- `RECUSO`
+- `06_members_chapas.gs`
 
-O sistema monitora essas respostas periodicamente.
+Fluxo:
 
-### Se responder `ACEITO`
-
-O sistema:
-
-- registra `Data resposta`
-- registra `MessageId resposta`
-- calcula o `Semestre de entrada`
-- integra o membro em `MEMBERS_ATUAIS`
-- grava `Data integração`
-- define `Status = Ativo`
-- define `Cargo/função atual = Membro`
-- envia e-mail final com link do grupo
-
-### Se responder `RECUSO`
-
-O sistema:
-
-- registra `Data resposta`
-- registra `MessageId resposta`
-- extrai o motivo, se houver
-- salva em `Observações do processo`
-- altera:
-  - `Status = Desclassificado`
-  - `Status do processo = Recusou`
-- envia e-mail confirmando a recusa
+- valida elegibilidade de presidente e vice em `MEMBERS_ATUAIS`;
+- analisa inscrição de chapa;
+- registra resultados;
+- enfileira na `MAIL_SAIDA` as comunicações de deferimento, indeferimento e eleição;
+- apoia o registro da diretoria vigente.
 
 ---
 
-## 4. Prazo expirado
+## Planilhas usadas
 
-Se o candidato não responder em até `timeoutDays`, o sistema:
+### `MEMBERS_FUTURO`
 
-- marca `Status = Desclassificado`
-- marca `Status do processo = Prazo expirado`
-- registra observação
-- envia e-mail informando o encerramento
+Campos operacionais principais:
 
----
-
-# Estrutura dos arquivos
-
-## `00_config.gs`
-
-Configurações centrais do módulo:
-
-- keys das planilhas
-- cabeçalhos
-- valores de status
-- assuntos de e-mail
-- parâmetros do fluxo
-
-## `01_members_waiting_invites.gs`
-
-Envio de convites e trigger `onEdit` de `MEMBERS_FUTURO`.
-
-## `02_members_acceptance_processing.gs`
-
-Processamento de respostas `ACEITO` / `RECUSO` e integração em `MEMBERS_ATUAIS`.
-
-## `03_members_sheet_mapping.gs`
-
-Mapeamento entre `MEMBERS_FUTURO` e `MEMBERS_ATUAIS`.
-
-## `04_members_gmail.gs`
-
-Helpers de Gmail do módulo.
-
-## `05_members_seletivo_import.gs`
-
-Importação de aprovados do seletivo para `MEMBERS_FUTURO`.
-
-## `50_members_install.gs`
-
-Instalação e remoção dos triggers do módulo.
-
----
-
-# Segurança contra reprocessamento
-
-O sistema utiliza:
-
-- `ThreadId convite`
-- `MessageId resposta`
-
-para evitar reprocessamentos indevidos.
-
-Também evita duplicidade por:
-
-- `RGA`
+- `Nome`
 - `EMAIL`
+- `RGA`
+- `Status`
+- `Status do processo`
+- `Data envio convite`
+- `ThreadId convite`
+- `Data resposta`
+- `MessageId resposta`
+- `Observações do processo`
+- `Semestre de entrada`
 
-na importação e integração.
+### `MEMBERS_ATUAIS`
 
----
+Planilha oficial de membros ativos, usada tanto para integração quanto para consultas de identidade e governança.
 
-# Triggers utilizados
+### `MEMBERS_HIST`
 
-## 1. onEdit
+Histórico de ex-membros e saídas homologadas.
 
-Função:
+### Planilhas externas integradas
 
-```text
-members_onEditProcessStatus
-```
-
-Responsável por detectar quando `Status do processo` é alterado para `Enviar e-mail`.
-
-## 2. Monitoramento de respostas
-
-Função:
-
-```text
-members_processAcceptanceReplies
-```
-
-Executada periodicamente para ler respostas dos candidatos.
-
-## 3. Verificação de prazo
-
-Função:
-
-```text
-members_processInvitationTimeouts
-```
-
-Executada periodicamente para convites expirados.
-
-## 4. Importação do seletivo (opcional)
-
-Função:
-
-```text
-members_importFromSeletivoResults
-```
-
-Pode ser executada manualmente ou por trigger temporal, conforme a estratégia adotada.
+- `SELETIVO_INSCRICAO`
+- `SELETIVO_AVALIACAO`
+- `ELEICOES_CHAPAS_INSCRICAO`
+- planilhas de vigência acessadas via `GEAPA-CORE`
 
 ---
 
-# Dependência
+## Arquivos principais
 
-Este módulo depende da library:
-
-```text
-GEAPA-CORE
-```
-
-Responsável por:
-
-- localizar planilhas por key
-- gerenciamento do registry
-- utilidades compartilhadas
-- sincronizações derivadas em `MEMBERS_ATUAIS`
+- `00_config.gs`: configuração central do módulo.
+- `01_members_waiting_invites.gs`: convites e `onEdit` de `MEMBERS_FUTURO`.
+- `02_members_acceptance_processing.gs`: respostas `ACEITO` / `RECUSO` e integração.
+- `03_members_sheet_mapping.gs`: mapeamento entre `MEMBERS_FUTURO` e `MEMBERS_ATUAIS`.
+- `04_members_gmail.gs`: adapters e compatibilidade com `GEAPA-CORE`.
+- `05_members_seletivo_import.gs`: fluxo consolidado de importação do seletivo.
+- `06_members_offboarding.gs`: histórico de desligamento e remoção de atuais.
+- `06_members_chapas.gs`: análise e processamento de chapas.
+- `50_members_install.gs`: instalação e remoção de triggers.
 
 ---
 
-# Observações importantes
+## Triggers usados
 
-## Mudanças feitas por script não disparam onEdit
+- `members_onEditProcessStatus`
+  - reage a `Status do processo = Enviar e-mail`.
 
-Esse ponto é central no módulo.
+- `members_processAcceptanceReplies`
+  - processamento periódico das respostas de e-mail.
 
-Quando uma linha é inserida via script em `MEMBERS_FUTURO`, o trigger `onEdit` não dispara automaticamente.
+- `members_processInvitationTimeouts`
+  - verificação periódica de convites expirados.
 
-Por isso, no caso de `Aprovado imediato`, o envio do convite é chamado diretamente por função logo após a inserção, sem depender de edição manual.
-
-## Estratégia adotada
-
-A arquitetura escolhida foi:
-
-- `SELETIVO_AVALIACAO` decide o destino
-- `SELETIVO_INSCRICAO` fornece os dados cadastrais
-- `MEMBERS_FUTURO` centraliza o fluxo de entrada
-- `MEMBERS_ATUAIS` só recebe membros após aceite
-
-Essa abordagem reaproveita o fluxo já existente do módulo e mantém o sistema consistente.
+- `members_importFromSeletivoResults`
+  - execução manual ou temporal, conforme a estratégia adotada.
 
 ---
 
-# Versionamento
+## Dependência no GEAPA-CORE
 
-O sistema usa:
+O módulo depende do core para:
 
-```text
-GitHub + CLASP
-```
-
-Fluxo típico:
-
-```text
-clasp pull / clasp push
-git add
-git commit
-git push
-```
+- localizar planilhas por `KEY`;
+- normalizar textos, e-mails e identidades;
+- construir/usar mapas de cabeçalho;
+- append e leitura por registros;
+- envio HTML e envio rastreado de e-mails;
+- renderer institucional de e-mails e montagem de `correlationKey` no convite de ingresso;
+- leitura de respostas via Mail Hub central quando `MAIL_EVENTOS` já estiver alimentada;
+- cálculo de semestre e sincronizações derivadas em `MEMBERS_ATUAIS`.
 
 ---
 
-# Autor
+## Observações operacionais
 
-Sistema desenvolvido para o **GEAPA – Grupo de Estudos e Apoio à Produção Agrícola**.  
-UFMT – Sinop.
+- mudanças feitas por script não disparam `onEdit`; por isso o convite do `Aprovado imediato` é enviado diretamente na importação;
+- a integração em `MEMBERS_ATUAIS` só acontece após aceite explícito, exceto nos fluxos administrativos de offboarding;
+- quando a Library `GEAPA-CORE` for atualizada com novas APIs consumidas por este módulo, é necessário atualizar a versão da Library no Apps Script se o projeto estiver preso em versão fixa.
+
+---
+
+## UX operacional das planilhas
+
+O modulo agora possui uma camada reaplicavel de UX para as principais abas operacionais:
+
+- `MEMBERS_FUTURO`
+- `MEMBERS_ATUAIS`
+- `MEMBERS_HIST`
+- `SELETIVO_INSCRICAO`
+- `SELETIVO_AVALIACAO`
+- `ELEICOES_CHAPAS_INSCRICAO`
+
+Recursos aplicados, em modo best effort:
+
+- linha 1 congelada;
+- filtro na linha 1;
+- notas curtas nos cabecalhos;
+- agrupamento visual de colunas por cores;
+- compactacao visual de colunas longas;
+- listas suspensas nas colunas fechadas, quando a aba permitir.
+
+Funcoes publicas:
+
+- `applyMembersSheetUx()`
+- `reapplyMembersSheetUx()`
+- `applyMembersFutureSheetUx()`
+- `applyMembersCurrentSheetUx()`
+- `applyMembersHistorySheetUx()`
+- `applyMembersSeletivoSheetUx()`
+- `applyMembersChapasSheetUx()`
+
+Observacoes:
+
+- a UX nao altera a logica do modulo;
+- a UX nao entra automaticamente nos fluxos de convite, integracao, seletivo ou chapas;
+- em abas no formato de tabela, operacoes incompatíveis podem ser puladas sem quebrar a execucao.
