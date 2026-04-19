@@ -15,6 +15,8 @@ const MEMBERS_HEADER_ALIASES = Object.freeze({
     email: Object.freeze(["EMAIL", "Email", "E-mail"]),
     birthDate: Object.freeze(["DATA DE NASCIMENTO", "Data de nascimento", "DATA_NASCIMENTO"]),
     instagram: Object.freeze(["@ Instagram", "INSTAGRAM"]),
+    birthCity: Object.freeze(["Cidade natal", "CIDADE_NATAL"]),
+    originState: Object.freeze(["UF de origem", "UF_ORIGEM"]),
     naturality: Object.freeze(["Naturalidade", "NATURALIDADE"]),
     sex: Object.freeze(["Sexo", "SEXO"]),
     academicHistory: Object.freeze([
@@ -40,6 +42,8 @@ const MEMBERS_HEADER_ALIASES = Object.freeze({
     email: Object.freeze(["EMAIL", "Email", "E-mail"]),
     birthDate: Object.freeze(["Data de nascimento", "DATA_NASCIMENTO"]),
     instagram: Object.freeze(["@ Instagram", "INSTAGRAM"]),
+    birthCity: Object.freeze(["Cidade natal", "CIDADE_NATAL"]),
+    originState: Object.freeze(["UF de origem", "UF_ORIGEM"]),
     naturality: Object.freeze(["Naturalidade", "NATURALIDADE"]),
     academicHistory: Object.freeze([
       "Participa/Participou de algum/alguns laboratório(s), projeto(s), pesquisa(s), empresa júnior, monitoria, etc? se sim, citar qual/quais.",
@@ -51,7 +55,13 @@ const MEMBERS_HEADER_ALIASES = Object.freeze({
     semesterCount: Object.freeze(["N° de semestres no grupo", "Nº de semestres no grupo", "NÂ° de semestres no grupo", "NÂº de semestres no grupo", "QTD_SEMESTRES_NO_GRUPO"]),
     currentSemester: Object.freeze(["Semestre atual", "SEMESTRE_ATUAL"]),
     presentationCount: Object.freeze(["Apresentações já feitas", "Apresentacoes ja feitas", "QTD_APRESENTACOES_REALIZADAS"]),
+    lastPresentationPeriod: Object.freeze(["PERIODO_ULTIMA_APRESENTACAO", "Periodo ultima apresentacao", "Período última apresentação"]),
     diretoriaDays: Object.freeze(["Dias em cargos da diretoria", "QTD_DIAS_EM_CARGOS_DIRETORIA"]),
+    diretoriaLimitCountedDays: Object.freeze(["QTD_DIAS_QUE_CONTAM_PARA_LIMITE_DIRETORIA"]),
+    diretoriaLimitDays: Object.freeze(["LIMITE_DIAS_DIRETORIA"]),
+    diretoriaLimitBalanceDays: Object.freeze(["SALDO_DIAS_DIRETORIA"]),
+    diretoriaEligibilityStatus: Object.freeze(["STATUS_ELEGIBILIDADE_DIRETORIA"]),
+    diretoriaEstimatedLimitDate: Object.freeze(["DATA_LIMITE_ESTIMADA_DIRETORIA"]),
     currentRole: Object.freeze(["Cargo/função atual", "Cargo/funcao atual", "CARGO_FUNCAO_ATUAL"]),
     sex: Object.freeze(["Sexo", "SEXO"]),
     suspended: Object.freeze(["Já foi suspenso?", "Ja foi suspenso?", "FLAG_JA_FOI_SUSPENSO"]),
@@ -66,6 +76,8 @@ const MEMBERS_HEADER_ALIASES = Object.freeze({
     birthDate: Object.freeze(["Data de nascimento", "DATA_NASCIMENTO"]),
     sex: Object.freeze(["Sexo", "SEXO"]),
     instagram: Object.freeze(["@ Instagram", "INSTAGRAM"]),
+    birthCity: Object.freeze(["Cidade natal", "CIDADE_NATAL"]),
+    originState: Object.freeze(["UF de origem", "UF_ORIGEM"]),
     naturality: Object.freeze(["Naturalidade", "NATURALIDADE"]),
     academicHistory: Object.freeze([
       "Participa/Participou de algum/alguns laboratório(s), projeto(s), pesquisa(s), empresa júnior, monitoria, etc? se sim, citar qual/quais.",
@@ -83,6 +95,22 @@ const MEMBERS_HEADER_ALIASES = Object.freeze({
     wasDirector: Object.freeze(["Foi membro da diretoria?", "FLAG_FOI_MEMBRO_DIRETORIA"]),
     internalNote: Object.freeze(["Observação interna", "Observacao interna", "OBSERVACAO_INTERNA"]),
     status: Object.freeze(["Status", "STATUS_REGISTRO"])
+  }),
+  lifecycleEvent: Object.freeze({
+    eventId: Object.freeze(["ID_EVENTO_MEMBRO", "ID_EVENTO", "EVENT_ID"]),
+    eventType: Object.freeze(["TIPO_EVENTO", "TIPO"]),
+    eventStatus: Object.freeze(["STATUS_EVENTO", "STATUS"]),
+    eventDate: Object.freeze(["DATA_EVENTO", "DATA", "DATA_HORA_EVENTO"]),
+    sourceModule: Object.freeze(["ORIGEM_MODULO", "MODULO_ORIGEM"]),
+    sourceKey: Object.freeze(["SOURCE_KEY", "CHAVE_ORIGEM", "ID_ORIGEM"]),
+    sourceRow: Object.freeze(["SOURCE_ROW", "LINHA_ORIGEM", "ROW_ORIGEM"]),
+    memberName: Object.freeze(["NOME_MEMBRO", "MEMBRO", "NOME"]),
+    memberEmail: Object.freeze(["EMAIL_MEMBRO", "EMAIL", "E-mail"]),
+    memberRga: Object.freeze(["RGA", "RGA_MEMBRO"]),
+    notes: Object.freeze(["OBSERVACOES", "OBSERVACAO", "OBSERVACAO_INTERNA", "NOTAS"]),
+    reason: Object.freeze(["MOTIVO", "RAZAO_EVENTO", "JUSTIFICATIVA"]),
+    processedAt: Object.freeze(["DATA_PROCESSAMENTO_MEMBROS", "PROCESSADO_EM", "DATA_PROCESSAMENTO"]),
+    lastError: Object.freeze(["ULTIMO_ERRO", "ERRO_PROCESSAMENTO", "MENSAGEM_ERRO"])
   })
 });
 
@@ -177,6 +205,43 @@ function members_getCurrentField_(record, key) {
   return members_getRecordValueByAliases_(record, members_getHeaderAliases_("current", key));
 }
 
+function members_normalizeUfOriginValue_(value) {
+  var text = String(value || "").trim().toUpperCase();
+  if (!text) return "";
+
+  var lettersOnly = text.replace(/[^A-Z]/g, "");
+  return lettersOnly.length === 2 ? lettersOnly : text;
+}
+
+function members_parseNaturalityValue_(value) {
+  var raw = String(value || "").trim();
+  if (!raw) {
+    return { city: "", uf: "" };
+  }
+
+  var compact = raw.replace(/\s+/g, " ").trim();
+  var match = compact.match(/^(.*?)(?:\s*[-\/,]\s*|\s+)([A-Za-z]{2})$/);
+  if (!match) {
+    return { city: compact, uf: "" };
+  }
+
+  var city = String(match[1] || "").replace(/[-\/,\s]+$/, "").trim();
+  var uf = members_normalizeUfOriginValue_(match[2] || "");
+  if (!city) {
+    return { city: compact, uf: "" };
+  }
+
+  return { city: city, uf: uf };
+}
+
+function members_composeNaturalityValue_(city, uf) {
+  var cityText = String(city || "").trim();
+  var ufText = members_normalizeUfOriginValue_(uf);
+
+  if (cityText && ufText) return cityText + " - " + ufText;
+  return cityText || ufText || "";
+}
+
 function members_backfillRecordAliases_(record) {
   var scopes = Object.keys(MEMBERS_HEADER_ALIASES);
 
@@ -193,6 +258,31 @@ function members_backfillRecordAliases_(record) {
         }
       });
     });
+  });
+
+  var legacyNaturality = members_getRecordValueByAliases_(record, ["Naturalidade", "NATURALIDADE"]);
+  var parsedNaturality = members_parseNaturalityValue_(legacyNaturality);
+  var birthCity = members_getRecordValueByAliases_(record, ["Cidade natal", "CIDADE_NATAL"]) || parsedNaturality.city;
+  var originState = members_getRecordValueByAliases_(record, ["UF de origem", "UF_ORIGEM"]) || parsedNaturality.uf;
+  var normalizedOriginState = members_normalizeUfOriginValue_(originState);
+  var recomposedNaturality = members_composeNaturalityValue_(birthCity, normalizedOriginState);
+
+  ["Cidade natal", "CIDADE_NATAL"].forEach(function(alias) {
+    if (birthCity && !Object.prototype.hasOwnProperty.call(record, alias)) {
+      record[alias] = birthCity;
+    }
+  });
+
+  ["UF de origem", "UF_ORIGEM"].forEach(function(alias) {
+    if (normalizedOriginState && !Object.prototype.hasOwnProperty.call(record, alias)) {
+      record[alias] = normalizedOriginState;
+    }
+  });
+
+  ["Naturalidade", "NATURALIDADE"].forEach(function(alias) {
+    if (recomposedNaturality && !Object.prototype.hasOwnProperty.call(record, alias)) {
+      record[alias] = recomposedNaturality;
+    }
   });
 
   return record;

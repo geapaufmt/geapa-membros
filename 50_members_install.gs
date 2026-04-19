@@ -6,12 +6,20 @@
 
 const MEMBERS_TRIGGERS = Object.freeze([
   { fn: "members_onEditProcessStatus", type: "onEditSpreadsheet" },
+  { fn: "members_onFormSubmitChapasSync", type: "onFormSubmitSpreadsheet" },
   { fn: "members_processAcceptanceReplies", type: "timeMinutes", minutes: 5 },
   { fn: "members_processInvitationTimeouts", type: "timeHours", hours: 12 },
   { fn: "members_importFromSeletivoResults", type: "timeMinutes", minutes: 10 },
   { fn: "members_processPendingChapas", type: "timeMinutes", minutes: 5 },
   { fn: "members_processCancelledChapas", type: "timeMinutes", minutes: 5 },
-  { fn: "members_processElectedChapas", type: "timeMinutes", minutes: 5 }
+  { fn: "members_processElectedChapas", type: "timeMinutes", minutes: 5 },
+  { fn: "members_processApprovedDismissalByAbsenceEvents", type: "timeMinutes", minutes: 15 },
+  { fn: "members_refreshGovernanceEligibilityPanel", type: "timeMinutes", minutes: 30 },
+  { fn: "members_syncDirectorNominationFormOptions", type: "timeMinutes", minutes: 15 },
+  { fn: "members_processDirectorNominations", type: "timeMinutes", minutes: 5 },
+  { fn: "members_sendCouncilorInvitationEmails", type: "timeHours", hours: 12 },
+  { fn: "members_processCouncilorAdhesions", type: "timeMinutes", minutes: 10 },
+  { fn: "members_syncGovernanceDriveAccess", type: "timeMinutes", minutes: 30 }
 ]);
 
 function members_installTriggers() {
@@ -30,6 +38,13 @@ function members_installTriggers() {
       ScriptApp.newTrigger(t.fn)
         .forSpreadsheet(spreadsheet)
         .onEdit()
+        .create();
+    }
+
+    if (t.type === "onFormSubmitSpreadsheet") {
+      ScriptApp.newTrigger(t.fn)
+        .forSpreadsheet(spreadsheet)
+        .onFormSubmit()
         .create();
     }
 

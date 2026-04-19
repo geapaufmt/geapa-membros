@@ -14,6 +14,11 @@ Módulo responsável pelo fluxo de entrada, integração, histórico de saída e
 - importa aprovados do processo seletivo para `MEMBERS_FUTURO`;
 - registra saídas homologadas em `MEMBERS_HIST` e remove de `MEMBERS_ATUAIS`;
 - valida e registra fluxos de chapas/diretoria.
+- conclui a composicao da diretoria eleita por formulario oficial, com elegibilidade temporal proporcional por dias;
+- envia devolutivas das nomeacoes da diretoria pelo Mail Hub central;
+- convida ex-diretores para adesao como conselheiros por formulario oficial;
+- registra conselheiros aceitos e sincroniza acessos institucionais de Drive para diretoria, transicao e conselho;
+- importa o formulario de pessoas externas / contatos academicos para `PROFS_BASE` e `PESSOAS_EXTERNAS_BASE`, usando `EIXOS_TEMATICOS_OFICIAIS` como fonte oficial dos eixos.
 
 ---
 
@@ -138,7 +143,49 @@ Fluxo:
 - analisa inscrição de chapa;
 - registra resultados;
 - enfileira na `MAIL_SAIDA` as comunicações de deferimento, indeferimento e eleição;
+- quando a chapa é eleita, envia no e-mail de parabenização o link do formulário oficial de nomeações, o link do painel `MEMBERS_ATUAIS`, a pasta de transição e instruções operacionais de uso;
+- junto do e-mail da chapa eleita, envia um aviso separado para a coordenação do curso usando `CONFIG_GEAPA.EMAIL_CURSO_MAE`, quando esse endereço estiver disponível;
 - apoia o registro da diretoria vigente.
+
+### 7. Cadastro de pessoas externas e contatos academicos
+
+Arquivo principal:
+
+- `09_members_external_contacts_import.gs`
+
+Fluxo:
+
+- le a planilha bruta do formulario por `PARTICIPANTES_EXTERNOS_FORM`;
+- usa `EIXOS_TEMATICOS_OFICIAIS` como fonte oficial da aba `Eixos`;
+- detecta respostas docentes por perfil e por preenchimento do bloco docente;
+- faz upsert por e-mail em `PROFS_BASE` ou `PESSOAS_EXTERNAS_BASE`;
+- transforma a escolha `Todos` nos eixos tematicos em `SIM` para todos os `INTERESSE_EIXO_*` da base de externos;
+- garante ids (`ID_PROFESSOR` / `ID_PARTICIPANTE_EXTERNO`) sem renumerar registros antigos.
+
+### 8. Transicao de diretoria, nomeacoes e conselheiros
+
+Arquivo principal:
+
+- `06_members_governance_transition.gs`
+
+Fluxo:
+
+- reaproveita `VIGENCIA_DIRETORIAS`, `VIGENCIA_MEMBROS_DIRETORIAS`, `VIGENCIA_SEMESTRES_DIRETORIAS`, `VIGENCIA_CONSELHEIROS` e `CARGOS_INSTITUCIONAIS_CONFIG` via `GEAPA-CORE`;
+- recalcula em `MEMBERS_ATUAIS` o painel de elegibilidade temporal:
+- `QTD_DIAS_QUE_CONTAM_PARA_LIMITE_DIRETORIA`
+- `LIMITE_DIAS_DIRETORIA`
+- `SALDO_DIAS_DIRETORIA`
+- `STATUS_ELEGIBILIDADE_DIRETORIA`
+- `DATA_LIMITE_ESTIMADA_DIRETORIA`
+- processa `DIRETORIA_NOMEACOES_RESPONSES` sem reimplementar o fluxo de Presidente e Vice;
+- valida cargo no catalogo oficial, disponibilidade por `ID_Diretoria`, existencia do membro em `MEMBERS_ATUAIS`, compatibilidade entre `RGA` e nome, e elegibilidade temporal;
+- registra em `VIGENCIA_MEMBROS_DIRETORIAS` apenas nomeacoes `APTO` ou `APTO_COM_LIMITE`;
+- enfileira pela `MAIL_SAIDA` a devolutiva automatica da analise de nomeacao;
+- quando a nomeacao e confirmada com registro novo, envia tambem um e-mail direto ao nomeado com o cargo confirmado e eventual limite temporal;
+- sincroniza as opcoes de `DIRETORIA_NOMEACOES_FORM` com base na diretoria alvo e nos cargos vagos permitidos via formulario;
+- identifica membros da diretoria de saida, envia convite para `CONSELHEIROS_ADESAO_FORM` e processa `CONSELHEIROS_ADESAO_RESPONSES`;
+- registra conselheiros aceitos em `VIGENCIA_CONSELHEIROS`;
+- sincroniza os acessos das pastas `ADMINISTRATIVO_PASTA` e `TRANSICAO_CONSELHEIROS_PASTA` de forma idempotente.
 
 ---
 
@@ -173,6 +220,12 @@ Histórico de ex-membros e saídas homologadas.
 - `SELETIVO_INSCRICAO`
 - `SELETIVO_AVALIACAO`
 - `ELEICOES_CHAPAS_INSCRICAO`
+- `DIRETORIA_NOMEACOES_RESPONSES`
+- `CONSELHEIROS_ADESAO_RESPONSES`
+- `PARTICIPANTES_EXTERNOS_FORM`
+- `PESSOAS_EXTERNAS_BASE`
+- `PROFS_BASE`
+- `EIXOS_TEMATICOS_OFICIAIS`
 - planilhas de vigência acessadas via `GEAPA-CORE`
 
 ---
@@ -191,6 +244,12 @@ Histórico de ex-membros e saídas homologadas.
 
 ---
 
+- `09_members_external_contacts_import.gs`: importador de professores e participantes externos a partir do formulario.
+
+## Arquivos adicionados na entrega recente
+
+- `06_members_governance_transition.gs`: transicao da diretoria, nomeacoes, conselheiros e acessos.
+
 ## Triggers usados
 
 - `members_onEditProcessStatus`
@@ -207,6 +266,28 @@ Histórico de ex-membros e saídas homologadas.
 
 ---
 
+## Triggers adicionais de governanca
+
+- `members_refreshGovernanceEligibilityPanel`
+  - recalculo periodico do painel temporal da diretoria em `MEMBERS_ATUAIS`.
+
+- `members_syncDirectorNominationFormOptions`
+  - sincroniza cargos disponiveis do formulario oficial de nomeacoes.
+
+- `members_processDirectorNominations`
+  - consome respostas de `DIRETORIA_NOMEACOES_RESPONSES`.
+
+- `members_sendCouncilorInvitationEmails`
+  - envia convites periodicos para adesao de conselheiros.
+
+- `members_processCouncilorAdhesions`
+  - consome respostas de `CONSELHEIROS_ADESAO_RESPONSES`.
+
+- `members_syncGovernanceDriveAccess`
+  - sincroniza os acessos das pastas institucionais de governanca.
+
+---
+
 ## Dependência no GEAPA-CORE
 
 O módulo depende do core para:
@@ -218,7 +299,23 @@ O módulo depende do core para:
 - envio HTML e envio rastreado de e-mails;
 - renderer institucional de e-mails e montagem de `correlationKey` no convite de ingresso;
 - leitura de respostas via Mail Hub central quando `MAIL_EVENTOS` já estiver alimentada;
-- cálculo de semestre e sincronizações derivadas em `MEMBERS_ATUAIS`.
+- cálculo de semestre e sincronizações derivadas em `MEMBERS_ATUAIS`;
+- leitura do Registry bruto para localizar formulários e pastas oficiais;
+- fila institucional de e-mails para nomeações da diretoria e convites de conselheiros.
+
+---
+
+## Atualizacao recente
+
+Entrega de 18/04/2026:
+
+- preservado o fluxo ja existente de registro automatico de Presidente e Vice;
+- adicionado o fluxo pos-eleicao para completar a composicao da diretoria por formulario;
+- elegibilidade temporal agora usa `Semestres_Diretoria` como regua oficial proporcional por dias;
+- nomeacoes podem resultar em `APTO`, `APTO_COM_LIMITE` ou `INELEGIVEL`;
+- a chapa eleita passa a receber no e-mail de parabenizacao os links operacionais de transicao, consulta e nomeacao;
+- ex-diretores podem aderir ao conselho consultivo por formulario, com registro oficial em `VIGENCIA_CONSELHEIROS`;
+- acessos de Drive passam a ser sincronizados automaticamente para diretoria vigente, chapa em transicao e conselheiros ativos.
 
 ---
 
@@ -240,6 +337,8 @@ O modulo agora possui uma camada reaplicavel de UX para as principais abas opera
 - `SELETIVO_INSCRICAO`
 - `SELETIVO_AVALIACAO`
 - `ELEICOES_CHAPAS_INSCRICAO`
+- `PESSOAS_EXTERNAS_BASE`
+- `PROFS_BASE`
 
 Recursos aplicados, em modo best effort:
 
@@ -259,9 +358,40 @@ Funcoes publicas:
 - `applyMembersHistorySheetUx()`
 - `applyMembersSeletivoSheetUx()`
 - `applyMembersChapasSheetUx()`
+- `applyMembersLifecycleEventsSheetUx()`
+- `applyMembersExternalContactsSheetUx()`
+- `applyMembersExternalParticipantsSheetUx()`
+- `applyMembersExternalProfessorsSheetUx()`
 
 Observacoes:
 
 - a UX nao altera a logica do modulo;
 - a UX nao entra automaticamente nos fluxos de convite, integracao, seletivo ou chapas;
+- a UX de `MEMBER_EVENTOS_VINCULO` reaproveita a base compartilhada do core, com notas e validacoes leves sem alterar a semantica dos eventos;
 - em abas no formato de tabela, operacoes incompatíveis podem ser puladas sem quebrar a execucao.
+---
+
+## Desligamento por faltas homologado
+
+Arquivo principal:
+
+- `07_members_lifecycle_consumers.gs`
+
+Fluxo:
+
+- le `MEMBER_EVENTOS_VINCULO` via `GEAPA-CORE`;
+- processa apenas `TIPO_EVENTO = DESLIGAMENTO_POR_FALTAS` com `STATUS_EVENTO = HOMOLOGADO`;
+- monta payload compativel com `members_offboardApprovedImmediateExit`;
+- reaproveita o offboarding oficial para mover de `MEMBERS_ATUAIS` para `MEMBERS_HIST`;
+- garante idempotencia verificando status do evento, presenca em `MEMBERS_ATUAIS` e historico equivalente em `MEMBERS_HIST`;
+- apos sucesso, atualiza o evento via API publica do `GEAPA-CORE` com `eventStatus = PROCESSADO_MEMBROS`, `notes`, `processedByModule` e `processingDate`;
+- em erro, registra via API publica do core `notes`, `processedByModule`, `processingDate` e `processingError`, preservando o caso para retry.
+
+Entradas publicas:
+
+- `members_processApprovedDismissalByAbsenceEvents`
+- `members_testDismissalByAbsenceLifecycleConsumer`
+
+Trigger sugerido no modulo:
+
+- `members_processApprovedDismissalByAbsenceEvents` a cada 15 minutos.
