@@ -104,11 +104,35 @@ function members_currentHasRga_(sheet, rga) {
 function members_getFutureSourceCell_(sourceRow, sourceFormulas, sourceMap, aliasKey) {
   const aliases = members_getHeaderAliases_("future", aliasKey);
   const sourceIdx = members_findHeaderIndexByAliases_(sourceMap, aliases);
-  if (sourceIdx < 0) return "";
+  if (sourceIdx >= 0) {
+    const formulaValue = sourceFormulas && sourceFormulas[sourceIdx];
+    if (formulaValue != null && String(formulaValue).trim()) return formulaValue;
+    return sourceRow[sourceIdx];
+  }
 
-  const formulaValue = sourceFormulas && sourceFormulas[sourceIdx];
-  if (formulaValue != null && String(formulaValue).trim()) return formulaValue;
-  return sourceRow[sourceIdx];
+  const legacyNaturalityIdx = members_findHeaderIndexByAliases_(
+    sourceMap,
+    members_getHeaderAliases_("future", "naturality")
+  );
+  const birthCityIdx = members_findHeaderIndexByAliases_(
+    sourceMap,
+    members_getHeaderAliases_("future", "birthCity")
+  );
+  const originStateIdx = members_findHeaderIndexByAliases_(
+    sourceMap,
+    members_getHeaderAliases_("future", "originState")
+  );
+
+  const legacyNaturality = legacyNaturalityIdx >= 0 ? sourceRow[legacyNaturalityIdx] : "";
+  const parsedNaturality = members_parseNaturalityValue_(legacyNaturality);
+  const birthCity = birthCityIdx >= 0 ? sourceRow[birthCityIdx] : parsedNaturality.city;
+  const originState = originStateIdx >= 0 ? sourceRow[originStateIdx] : parsedNaturality.uf;
+
+  if (aliasKey === "birthCity") return birthCity;
+  if (aliasKey === "originState") return members_normalizeUfOriginValue_(originState);
+  if (aliasKey === "naturality") return members_composeNaturalityValue_(birthCity, originState);
+
+  return "";
 }
 
 function members_buildCurrentRowFromFutureRow_(sourceRow, sourceHeaders, targetHeaders, entrySemesterFull, opts) {

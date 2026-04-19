@@ -19,7 +19,10 @@ const SETTINGS = Object.freeze({
   vigenciaKeys: Object.freeze({
     semestres: "VIGENCIA_SEMESTRES",
     diretorias: "VIGENCIA_DIRETORIAS",
-    membrosDiretoria: "VIGENCIA_MEMBROS_DIRETORIAS"
+    membrosDiretoria: "VIGENCIA_MEMBROS_DIRETORIAS",
+    semestresDiretoria: "VIGENCIA_SEMESTRES_DIRETORIAS",
+    conselheiros: "VIGENCIA_CONSELHEIROS",
+    cargosConfig: "CARGOS_INSTITUCIONAIS_CONFIG"
   }),
 
   headers: Object.freeze({
@@ -70,6 +73,17 @@ const SETTINGS = Object.freeze({
     histStatus: "Desligado homologado"
   }),
 
+  lifecycle: Object.freeze({
+    eventKey: "MEMBER_EVENTOS_VINCULO",
+    dismissalByAbsenceType: "DESLIGAMENTO_POR_FALTAS",
+    registeredStatus: "REGISTRADO",
+    homologatedStatus: "HOMOLOGADO",
+    processedMembersStatus: "PROCESSADO_MEMBROS",
+    activitiesModule: "GEAPA_ATIVIDADES",
+    membersModule: "GEAPA_MEMBROS",
+    notePrefix: "[geapa-membros]"
+  }),
+
   seletivo: Object.freeze({
     avaliacaoKey: "SELETIVO_AVALIACAO",
     inscricaoKey: "SELETIVO_INSCRICAO",
@@ -81,11 +95,39 @@ const SETTINGS = Object.freeze({
     waiting: "Em Espera"
   }),
 
+  externalContacts: Object.freeze({
+    participantsKey: "PESSOAS_EXTERNAS_BASE",
+    professorsKey: "PROFS_BASE",
+    yes: "SIM",
+    no: "NAO",
+    categoryPublicoValues: Object.freeze([
+      "MEMBRO_COMUNIDADE_EXTERNA",
+      "ESTUDANTE_EXTERNO",
+      "PROFISSIONAL_EXTERNO",
+      "DOCENTE_EXTERNO",
+      "EGRESSO",
+      "PARCEIRO_INSTITUCIONAL",
+      "OUTRO"
+    ]),
+    relationGeapaValues: Object.freeze([
+      "PARTICIPANTE_EXTERNO_INTERESSADO",
+      "PALESTRANTE_POTENCIAL",
+      "CONVIDADO_RECURRENTE",
+      "PARCEIRO_INSTITUCIONAL",
+      "APOIO_EVENTUAL",
+      "SEM_RELACAO_DEFINIDA"
+    ])
+  }),
+
   election: Object.freeze({
   chapaKey: "ELEICOES_CHAPAS_INSCRICAO",
+  processingKey: "ELEICOES_CHAPAS_PROCESSAMENTO",
+  courseConfigKey: "CONFIG_GEAPA",
+  courseCoordinationEmailField: "EMAIL_CURSO_MAE",
 
   electedEmailSubject: "Chapa eleita - início da transição da diretoria GEAPA",
 
+  courseNotificationSubject: "Nova chapa eleita do GEAPA - comunicado institucional",
   statusDeferida: "DEFERIDA",
   statusIndeferida: "INDEFERIDA",
   statusEleita: "ELEITA",
@@ -103,6 +145,21 @@ const SETTINGS = Object.freeze({
   emailApprovedSubject: "Inscrição de chapa deferida - GEAPA",
   emailRejectedSubject: "Inscrição de chapa indeferida - GEAPA",
   emailCancelledSubject: "Confirmação de cancelamento de chapa - GEAPA",
+
+  processingHeaders: Object.freeze({
+    chapaId: "ID_CHAPA",
+    sourceRow: "LINHA_ORIGEM_INSCRICAO",
+    targetBoardId: "ID_DIRETORIA_ALVO"
+  }),
+
+  chapaHeaderAliases: Object.freeze({
+    presidentName: Object.freeze([
+      "Nome Completo do candidato a Presidente"
+    ]),
+    viceName: Object.freeze([
+      "Nome Completo do candidato a Vice-Presidente"
+    ])
+  }),
 
   chapaHeaders: Object.freeze({
     submittedAt: "Carimbo de data/hora",
@@ -152,6 +209,73 @@ timeoutDays: 7,
   timeoutEmail: Object.freeze({
     subject: "Prazo encerrado para ingresso no GEAPA"
   }),
+
+  governance: Object.freeze({
+    forms: Object.freeze({
+      nominationFormKey: "DIRETORIA_NOMEACOES_FORM",
+      nominationResponsesKey: "DIRETORIA_NOMEACOES_RESPONSES",
+      councilorFormKey: "CONSELHEIROS_ADESAO_FORM",
+      councilorResponsesKey: "CONSELHEIROS_ADESAO_RESPONSES"
+    }),
+
+    folders: Object.freeze({
+      administrativoKey: "ADMINISTRATIVO_PASTA",
+      transicaoKey: "TRANSICAO_CONSELHEIROS_PASTA"
+    }),
+
+    configKeys: Object.freeze({
+      mailConfig: "MAIL_CONFIG",
+      mailOutbox: "MAIL_SAIDA",
+      mailEvents: "MAIL_EVENTOS",
+      mailIndex: "MAIL_INDICE",
+      communicationsConfig: "COMUNICACOES_CONFIG",
+      communicationsLog: "COMUNICACOES_LOG"
+    }),
+
+    states: Object.freeze({
+      apto: "APTO",
+      aptoComLimite: "APTO_COM_LIMITE",
+      inelegivel: "INELEGIVEL",
+      accepted: "ACEITO",
+      refused: "RECUSADO"
+    }),
+
+    values: Object.freeze({
+      yes: "SIM",
+      no: "NAO",
+      uniqueYes: "SIM",
+      activeYes: "SIM",
+      statusAtivo: "ATIVO",
+      cargoGrupoDiretoria: "DIRETORIA",
+      cargoGrupoAssessoria: "ASSESSORIA",
+      cargoConselheiroNome: "Conselheiro(a) Consultivo(a)"
+    }),
+
+    currentHeaders: Object.freeze({
+      countedDays: "QTD_DIAS_QUE_CONTAM_PARA_LIMITE_DIRETORIA",
+      limitDays: "LIMITE_DIAS_DIRETORIA",
+      balanceDays: "SALDO_DIAS_DIRETORIA",
+      eligibilityStatus: "STATUS_ELEGIBILIDADE_DIRETORIA",
+      estimatedLimitDate: "DATA_LIMITE_ESTIMADA_DIRETORIA"
+    }),
+
+    limits: Object.freeze({
+      maxDiretoriaSemesters: 3,
+      councilorInvitationLeadDays: 30
+    }),
+
+    email: Object.freeze({
+      nominationSubject: "Resultado da analise de nomeacao da diretoria - GEAPA",
+      nomineeConfirmedSubject: "Nomeacao confirmada para cargo da diretoria - GEAPA",
+      councilorInviteSubject: "Convite para adesao como conselheiro(a) consultivo(a) - GEAPA"
+    }),
+
+    properties: Object.freeze({
+      nominationPrefix: "GEAPA_MEMBROS_GOV_NOM_",
+      councilorInvitePrefix: "GEAPA_MEMBROS_GOV_CONV_",
+      councilorResponsePrefix: "GEAPA_MEMBROS_GOV_CONS_"
+    })
+  })
 });
 
 function members_assertCore_() {

@@ -30,6 +30,8 @@ const MEMBERS_SHEET_UX = Object.freeze({
     email: 'Email principal usado nos convites e confirmacoes.',
     birthDate: 'Data de nascimento da pessoa.',
     instagram: 'Instagram informado pela pessoa, se houver.',
+    birthCity: 'Cidade natal declarada no ingresso.',
+    originState: 'UF de origem declarada no ingresso.',
     naturality: 'Naturalidade declarada no ingresso.',
     sex: 'Sexo informado na inscricao.',
     academicHistory: 'Historico academico livre trazido da inscricao.',
@@ -52,6 +54,8 @@ const MEMBERS_SHEET_UX = Object.freeze({
     email: 'Email principal do membro ativo.',
     birthDate: 'Data de nascimento. Usada em fluxos comemorativos.',
     instagram: 'Instagram do membro, quando informado.',
+    birthCity: 'Cidade natal do membro.',
+    originState: 'UF de origem do membro.',
     naturality: 'Naturalidade do membro.',
     academicHistory: 'Historico academico resumido do membro.',
     integratedAt: 'Data oficial de integracao ao grupo.',
@@ -59,8 +63,14 @@ const MEMBERS_SHEET_UX = Object.freeze({
     entrySemester: 'Semestre em que o membro entrou no GEAPA.',
     semesterCount: 'Quantidade de semestres completos no grupo.',
     currentSemester: 'Semestre atual do aluno calculado pelo sistema com base no RGA informado.',
+    lastPresentationPeriod: 'Periodo institucional em que o membro realizou a ultima apresentacao registrada.',
     presentationCount: 'Quantidade de apresentacoes ja realizadas.',
     diretoriaDays: 'Quantidade acumulada de dias em cargos de diretoria.',
+    diretoriaLimitCountedDays: 'Dias historicos em cargos que contam para o limite temporal da diretoria.',
+    diretoriaLimitDays: 'Limite total de dias permitido para cargos de diretoria na regra vigente.',
+    diretoriaLimitBalanceDays: 'Saldo restante de dias para futura permanencia em cargos de diretoria.',
+    diretoriaEligibilityStatus: 'Classificacao objetiva para novas nomeacoes: APTO, APTO_COM_LIMITE ou INELEGIVEL.',
+    diretoriaEstimatedLimitDate: 'Data limite estimada caso a pessoa assuma novo cargo na proxima diretoria.',
     currentRole: 'Cargo ou funcao atual no grupo.',
     sex: 'Sexo do membro.',
     suspended: 'Indica se o membro ja foi suspenso anteriormente.',
@@ -75,6 +85,8 @@ const MEMBERS_SHEET_UX = Object.freeze({
     birthDate: 'Data de nascimento preservada para referencia.',
     sex: 'Sexo preservado no historico do ex-membro.',
     instagram: 'Instagram preservado no historico.',
+    birthCity: 'Cidade natal preservada no historico.',
+    originState: 'UF de origem preservada no historico.',
     naturality: 'Naturalidade preservada no historico.',
     academicHistory: 'Historico academico trazido do cadastro original.',
     integratedAt: 'Data em que a pessoa entrou no GEAPA.',
@@ -90,12 +102,55 @@ const MEMBERS_SHEET_UX = Object.freeze({
     internalNote: 'Observacao interna do historico.',
     status: 'Status do registro historico.'
   }),
+  lifecycleEventNotes: Object.freeze({
+    'ID_EVENTO_MEMBRO': 'Identificador tecnico estavel do evento de vinculo.',
+    'ID_EVENTO': 'Identificador tecnico estavel do evento de vinculo.',
+    'EVENT_ID': 'Identificador tecnico estavel do evento de vinculo.',
+    'TIPO_EVENTO': 'Tipo institucional do evento de vinculo. Ex.: INGRESSO ou DESLIGAMENTO_POR_FALTAS.',
+    'TIPO': 'Tipo institucional do evento de vinculo. Ex.: INGRESSO ou DESLIGAMENTO_POR_FALTAS.',
+    'STATUS_EVENTO': 'Status operacional do evento. Ex.: REGISTRADO, HOMOLOGADO ou PROCESSADO_MEMBROS.',
+    'STATUS': 'Status operacional do evento. Ex.: REGISTRADO, HOMOLOGADO ou PROCESSADO_MEMBROS.',
+    'DATA_EVENTO': 'Data principal do evento de vinculo.',
+    'DATA': 'Data principal do evento de vinculo.',
+    'DATA_HORA_EVENTO': 'Data e hora principal do evento de vinculo.',
+    'ORIGEM_MODULO': 'Modulo que gerou o evento na base compartilhada.',
+    'MODULO_ORIGEM': 'Modulo que gerou o evento na base compartilhada.',
+    'SOURCE_KEY': 'Chave de negocio ou identificador de origem do evento.',
+    'CHAVE_ORIGEM': 'Chave de negocio ou identificador de origem do evento.',
+    'ID_ORIGEM': 'Chave de negocio ou identificador de origem do evento.',
+    'SOURCE_ROW': 'Linha de origem na planilha ou base que gerou o evento, quando houver.',
+    'LINHA_ORIGEM': 'Linha de origem na planilha ou base que gerou o evento, quando houver.',
+    'ROW_ORIGEM': 'Linha de origem na planilha ou base que gerou o evento, quando houver.',
+    'NOME_MEMBRO': 'Nome do membro vinculado ao evento.',
+    'MEMBRO': 'Nome do membro vinculado ao evento.',
+    'NOME': 'Nome do membro vinculado ao evento.',
+    'EMAIL_MEMBRO': 'Email associado ao membro no evento.',
+    'EMAIL': 'Email associado ao membro no evento.',
+    'E-mail': 'Email associado ao membro no evento.',
+    'RGA': 'RGA associado ao membro no evento.',
+    'RGA_MEMBRO': 'RGA associado ao membro no evento.',
+    'OBSERVACOES': 'Observacoes tecnicas ou operacionais do processamento do evento.',
+    'OBSERVACAO': 'Observacoes tecnicas ou operacionais do processamento do evento.',
+    'OBSERVACAO_INTERNA': 'Observacoes tecnicas ou operacionais do processamento do evento.',
+    'NOTAS': 'Observacoes tecnicas ou operacionais do processamento do evento.',
+    'MOTIVO': 'Motivo institucional do evento, quando aplicavel.',
+    'RAZAO_EVENTO': 'Motivo institucional do evento, quando aplicavel.',
+    'JUSTIFICATIVA': 'Motivo institucional do evento, quando aplicavel.',
+    'DATA_PROCESSAMENTO_MEMBROS': 'Data em que o modulo GEAPA-Membros consumiu ou atualizou este evento.',
+    'PROCESSADO_EM': 'Data em que o modulo GEAPA-Membros consumiu ou atualizou este evento.',
+    'DATA_PROCESSAMENTO': 'Data em que o modulo GEAPA-Membros consumiu ou atualizou este evento.',
+    'ULTIMO_ERRO': 'Ultimo erro registrado no processamento do evento.',
+    'ERRO_PROCESSAMENTO': 'Ultimo erro registrado no processamento do evento.',
+    'MENSAGEM_ERRO': 'Ultimo erro registrado no processamento do evento.'
+  }),
   seletivoInscricaoNotes: Object.freeze({
     'Nome': 'Nome do candidato vindo da inscricao do seletivo.',
     'RGA': 'RGA informado no seletivo.',
     'EMAIL': 'Email principal informado no seletivo.',
     'CPF': 'CPF informado na inscricao.',
     'Telefone': 'Telefone informado na inscricao.',
+    'Cidade natal': 'Cidade natal informada na inscricao.',
+    'UF de origem': 'UF de origem informada na inscricao.',
     'Semestre atual': 'Semestre atual do aluno calculado pelo sistema com base no RGA informado.',
     'Data de nascimento': 'Data de nascimento informada na inscricao.'
   }),
@@ -110,8 +165,10 @@ const MEMBERS_SHEET_UX = Object.freeze({
     'Carimbo de data/hora': 'Momento de envio da inscricao da chapa.',
     'Endereco de e-mail': 'Email do remetente da inscricao.',
     'Nome do candidato a Presidente': 'Nome informado para o cargo de Presidente.',
+    'Nome Completo do candidato a Presidente': 'Nome informado para o cargo de Presidente.',
     'RGA do candidato a Presidente': 'RGA do candidato a Presidente.',
     'Nome do candidato a Vice-Presidente': 'Nome informado para o cargo de Vice-Presidente.',
+    'Nome Completo do candidato a Vice-Presidente': 'Nome informado para o cargo de Vice-Presidente.',
     'RGA do candidato a Vice-presidente': 'RGA do candidato a Vice-Presidente.',
     'Proposta Basica de Gestao': 'Resumo da proposta apresentada pela chapa.',
     'Status Presidente': 'Resultado automatico da checagem do candidato a Presidente. Valores esperados: DEFERIDA ou INDEFERIDA.',
@@ -132,26 +189,133 @@ const MEMBERS_SHEET_UX = Object.freeze({
     'E-mail chapa eleita enviado?': 'Controle tecnico do email da chapa eleita. Valores: SIM ou NAO.',
     'Data/Hora e-mail chapa eleita': 'Momento do envio do email da chapa eleita.'
   }),
+  chapaProcessingNotes: Object.freeze({
+    'ID_CHAPA': 'Identificador tecnico estavel da chapa no fluxo de processamento.',
+    'LINHA_ORIGEM_INSCRICAO': 'Linha atual da resposta correspondente na aba bruta de inscricao.',
+    'ID_DIRETORIA_ALVO': 'Diretoria em que a chapa deve ser analisada e, se eleita, registrada. Pode ser ajustada manualmente.',
+    'Carimbo de data/hora': 'Momento de envio da inscricao da chapa.',
+    'Endereco de e-mail': 'Email do remetente da inscricao.',
+    'Nome do candidato a Presidente': 'Nome informado para o cargo de Presidente.',
+    'Nome Completo do candidato a Presidente': 'Nome informado para o cargo de Presidente.',
+    'RGA do candidato a Presidente': 'RGA do candidato a Presidente.',
+    'Nome do candidato a Vice-Presidente': 'Nome informado para o cargo de Vice-Presidente.',
+    'Nome Completo do candidato a Vice-Presidente': 'Nome informado para o cargo de Vice-Presidente.',
+    'RGA do candidato a Vice-presidente': 'RGA do candidato a Vice-Presidente.',
+    'Proposta Basica de Gestao': 'Resumo da proposta apresentada pela chapa.',
+    'Status Presidente': 'Resultado automatico da checagem do candidato a Presidente. Valores esperados: DEFERIDA ou INDEFERIDA.',
+    'Motivos Presidente': 'Justificativas automaticas relacionadas ao candidato a Presidente.',
+    'Status Vice': 'Resultado automatico da checagem do candidato a Vice. Valores esperados: DEFERIDA ou INDEFERIDA.',
+    'Motivos Vice': 'Justificativas automaticas relacionadas ao candidato a Vice.',
+    'Status da Chapa': 'Resultado automatico da chapa apos analisar Presidente e Vice. Valores: DEFERIDA ou INDEFERIDA.',
+    'Motivos da Chapa': 'Consolidado das justificativas automaticas da chapa.',
+    'Parecer automatico': 'Parecer textual gerado pelo modulo com base na analise objetiva.',
+    'Data/Hora da analise': 'Momento em que a analise automatica foi executada.',
+    'Resultado final': 'Decisao final do processo eleitoral. Valores possiveis: INDEFERIDA, ELEITA, NAO ELEITA ou CANCELADA.',
+    'Data/Hora resultado final': 'Momento em que o resultado final foi definido.',
+    'Data/Hora cancelamento': 'Momento em que a chapa foi marcada como cancelada.',
+    'E-mail cancelamento enviado?': 'Controle tecnico do email de cancelamento. Valores: SIM ou NAO.',
+    'E-mail resultado enviado?': 'Controle tecnico do email de deferimento ou indeferimento.',
+    'Diretoria registrada?': 'Indica se a diretoria da chapa eleita ja foi registrada. Valores: SIM ou NAO.',
+    'Observacao da diretoria': 'Campo livre para anotacoes manuais da diretoria.',
+    'E-mail chapa eleita enviado?': 'Controle tecnico do email da chapa eleita. Valores: SIM ou NAO.',
+    'Data/Hora e-mail chapa eleita': 'Momento do envio do email da chapa eleita.'
+  }),
+  externalParticipantsNotes: Object.freeze({
+    'ID_PARTICIPANTE_EXTERNO': 'Identificador tecnico estavel do cadastro de pessoa externa.',
+    'NOME': 'Nome principal usado para identificar a pessoa na base final.',
+    'EMAIL': 'Email principal efetivo para contato. Pode ser o preferencial quando ele for diferente do email do Forms.',
+    'EMAIL_PREFERENCIAL': 'Email preferencial apenas quando for diferente do email usado no envio do formulario.',
+    'TELEFONE': 'Telefone ou WhatsApp principal, com hyperlink clicavel quando possivel.',
+    'INSTAGRAM': 'Perfil de Instagram informado pela pessoa, com link clicavel quando houver.',
+    'DATA_NASCIMENTO': 'Data de nascimento normalizada pelo importador. Formato visual sugerido: dd/MM/yyyy.',
+    'SEXO': 'Sexo informado no formulario.',
+    'INSTITUICAO': 'Empresa, instituicao, orgao, laboratorio ou propriedade vinculada.',
+    'CARGO_OU_ATUACAO': 'Cargo, funcao ou area de atuacao principal da pessoa externa.',
+    'CURSO_OU_AREA': 'Curso, instituicao, area de formacao, interesse ou atuacao consolidada.',
+    'CATEGORIA_PARTICIPANTE': 'Categoria ou forma de identificacao da pessoa em relacao ao GEAPA.',
+    'CATEGORIA_PUBLICO': 'Classifica o publico externo em termos de perfil institucional ou profissional.',
+    'RELACAO_COM_GEAPA': 'Indica o tipo de relacao atual ou desejada com o GEAPA.',
+    'CIDADE': 'Cidade informada para contato ou referencia.',
+    'UF': 'UF informada pela pessoa.',
+    'ORIGEM_CONTATO': 'Como a pessoa conheceu o GEAPA.',
+    'MOTIVACAO_OU_INTERESSE': 'Motivacao declarada para se aproximar do GEAPA.',
+    'RECEBE_COMUNICADOS_GERAIS': 'Indica se deseja receber comunicados gerais do GEAPA.',
+    'RECEBE_REUNIOES_ABERTAS': 'Indica se deseja receber convites para reunioes abertas.',
+    'RECEBE_APRESENTACOES_ALUNOS': 'Indica se deseja receber avisos sobre apresentacoes de alunos.',
+    'RECEBE_EVENTOS_VISITAS': 'Indica se deseja receber convites para palestras, eventos, visitas e outras atividades.',
+    'INTERESSE_EIXO_I': 'Interesse no eixo tematico I segundo a planilha oficial de eixos.',
+    'INTERESSE_EIXO_II': 'Interesse no eixo tematico II segundo a planilha oficial de eixos.',
+    'INTERESSE_EIXO_III': 'Interesse no eixo tematico III segundo a planilha oficial de eixos.',
+    'INTERESSE_EIXO_IV': 'Interesse no eixo tematico IV segundo a planilha oficial de eixos.',
+    'INTERESSE_EIXO_V': 'Interesse no eixo tematico V segundo a planilha oficial de eixos.',
+    'INTERESSE_EIXO_VI': 'Interesse no eixo tematico VI segundo a planilha oficial de eixos.',
+    'INTERESSE_EIXO_VII': 'Interesse no eixo tematico VII segundo a planilha oficial de eixos.',
+    'INTERESSE_EIXO_VIII': 'Interesse no eixo tematico VIII segundo a planilha oficial de eixos.',
+    'ATIVO': 'Controle cadastral da base final. Valores sugeridos: SIM ou NAO.',
+    'OBSERVACOES': 'Observacoes gerais e bloco tecnico gerenciado pelo importador.',
+    'CRIADO_EM': 'Data e hora em que o registro foi criado na base final.',
+    'ATUALIZADO_EM': 'Data e hora da ultima atualizacao do registro na base final.'
+  }),
+  externalProfessorsNotes: Object.freeze({
+    'ID_PROFESSOR': 'Identificador tecnico estavel do cadastro docente.',
+    'NOME': 'Nome principal usado para identificar o docente na base final.',
+    'EMAIL': 'Email principal efetivo para contato. Pode ser o preferencial quando ele for diferente do email do Forms.',
+    'EMAIL_PREFERENCIAL': 'Email preferencial apenas quando for diferente do email usado no envio do formulario.',
+    'TELEFONE': 'Telefone ou WhatsApp principal, com hyperlink clicavel quando possivel.',
+    'INSTAGRAM': 'Perfil de Instagram informado pela pessoa, com link clicavel quando houver.',
+    'DATA_NASCIMENTO': 'Data de nascimento normalizada pelo importador. Formato visual sugerido: dd/MM/yyyy.',
+    'SEXO': 'Sexo informado no formulario.',
+    'INSTITUICAO': 'Instituicao em que atua como docente.',
+    'VINCULO_DOCENTE': 'Vinculo docente principal informado no formulario.',
+    'DISCIPLINAS': 'Disciplinas lecionadas ou com maior vinculo.',
+    'TITULACAO': 'Titulacao principal informada pelo docente.',
+    'FORMACAO': 'Formacao principal informada pelo docente.',
+    'EIXO_TEMATICO_1': 'Eixo tematico principal, reconciliado com a planilha oficial de eixos.',
+    'EIXO_TEMATICO_2': 'Eixo tematico secundario, reconciliado com a planilha oficial de eixos.',
+    'CIDADE': 'Cidade informada para contato ou referencia.',
+    'UF': 'UF informada pelo docente.',
+    'ORIGEM_CONTATO': 'Como a pessoa conheceu o GEAPA.',
+    'RECEBE_COMUNICADOS_GERAIS': 'Indica se deseja receber comunicados gerais do GEAPA.',
+    'RECEBE_REUNIOES_ABERTAS': 'Indica se deseja receber convites para reunioes abertas.',
+    'RECEBE_APRESENTACOES_ALUNOS': 'Indica se deseja receber avisos sobre apresentacoes de alunos.',
+    'RECEBE_EVENTOS_VISITAS': 'Indica se deseja receber convites para palestras, eventos, visitas e outras atividades.',
+    'ATIVO': 'Controle cadastral da base final. Valores sugeridos: SIM ou NAO.',
+    'OBSERVACOES': 'Observacoes gerais e bloco tecnico gerenciado pelo importador.',
+    'CRIADO_EM': 'Data e hora em que o registro foi criado na base final.',
+    'ATUALIZADO_EM': 'Data e hora da ultima atualizacao do registro na base final.'
+  }),
+  externalParticipantsGroups: Object.freeze([
+    Object.freeze({ color: '#d9ead3', headers: ['ID_PARTICIPANTE_EXTERNO', 'NOME', 'EMAIL', 'EMAIL_PREFERENCIAL', 'TELEFONE', 'INSTAGRAM', 'DATA_NASCIMENTO', 'SEXO', 'CIDADE', 'UF'] }),
+    Object.freeze({ color: '#d0e0e3', headers: ['INSTITUICAO', 'CARGO_OU_ATUACAO', 'CURSO_OU_AREA', 'CATEGORIA_PARTICIPANTE', 'CATEGORIA_PUBLICO', 'RELACAO_COM_GEAPA', 'ORIGEM_CONTATO', 'MOTIVACAO_OU_INTERESSE', 'INTERESSE_EIXO_I', 'INTERESSE_EIXO_II', 'INTERESSE_EIXO_III', 'INTERESSE_EIXO_IV', 'INTERESSE_EIXO_V', 'INTERESSE_EIXO_VI', 'INTERESSE_EIXO_VII', 'INTERESSE_EIXO_VIII'] }),
+    Object.freeze({ color: '#fff2cc', headers: ['RECEBE_COMUNICADOS_GERAIS', 'RECEBE_REUNIOES_ABERTAS', 'RECEBE_APRESENTACOES_ALUNOS', 'RECEBE_EVENTOS_VISITAS', 'ATIVO'] }),
+    Object.freeze({ color: '#ead1dc', headers: ['OBSERVACOES', 'CRIADO_EM', 'ATUALIZADO_EM'] })
+  ]),
+  externalProfessorsGroups: Object.freeze([
+    Object.freeze({ color: '#d9ead3', headers: ['ID_PROFESSOR', 'NOME', 'EMAIL', 'EMAIL_PREFERENCIAL', 'TELEFONE', 'INSTAGRAM', 'DATA_NASCIMENTO', 'SEXO', 'CIDADE', 'UF'] }),
+    Object.freeze({ color: '#d0e0e3', headers: ['INSTITUICAO', 'VINCULO_DOCENTE', 'DISCIPLINAS', 'TITULACAO', 'FORMACAO', 'EIXO_TEMATICO_1', 'EIXO_TEMATICO_2', 'ORIGEM_CONTATO'] }),
+    Object.freeze({ color: '#fff2cc', headers: ['RECEBE_COMUNICADOS_GERAIS', 'RECEBE_REUNIOES_ABERTAS', 'RECEBE_APRESENTACOES_ALUNOS', 'RECEBE_EVENTOS_VISITAS', 'ATIVO'] }),
+    Object.freeze({ color: '#ead1dc', headers: ['OBSERVACOES', 'CRIADO_EM', 'ATUALIZADO_EM'] })
+  ]),
   futureGroups: Object.freeze([
-    Object.freeze({ color: '#d9ead3', keys: ['name', 'rga', 'cpf', 'phone', 'email', 'birthDate', 'instagram', 'naturality', 'sex'] }),
+    Object.freeze({ color: '#d9ead3', keys: ['name', 'rga', 'cpf', 'phone', 'email', 'birthDate', 'instagram', 'birthCity', 'originState', 'naturality', 'sex'] }),
     Object.freeze({ color: '#d0e0e3', keys: ['enrollmentSemester', 'academicHistory', 'currentSemester', 'entrySemester'] }),
     Object.freeze({ color: '#fff2cc', keys: ['status', 'processStatus', 'sentAt', 'threadId', 'repliedAt', 'messageId', 'integratedAt'] }),
     Object.freeze({ color: '#ead1dc', keys: ['notes'] })
   ]),
   currentGroups: Object.freeze([
-    Object.freeze({ color: '#d9ead3', keys: ['name', 'rga', 'cpf', 'phone', 'email', 'birthDate', 'instagram', 'naturality', 'sex'] }),
-    Object.freeze({ color: '#d0e0e3', keys: ['entrySemester', 'currentSemester', 'semesterCount', 'presentationCount', 'effectiveGroupTime'] }),
-    Object.freeze({ color: '#fff2cc', keys: ['currentRole', 'diretoriaDays', 'suspended', 'status'] }),
+    Object.freeze({ color: '#d9ead3', keys: ['name', 'rga', 'cpf', 'phone', 'email', 'birthDate', 'instagram', 'birthCity', 'originState', 'naturality', 'sex'] }),
+    Object.freeze({ color: '#d0e0e3', keys: ['entrySemester', 'currentSemester', 'lastPresentationPeriod', 'semesterCount', 'presentationCount', 'effectiveGroupTime'] }),
+    Object.freeze({ color: '#fff2cc', keys: ['currentRole', 'diretoriaDays', 'diretoriaLimitCountedDays', 'diretoriaLimitDays', 'diretoriaLimitBalanceDays', 'diretoriaEligibilityStatus', 'diretoriaEstimatedLimitDate', 'suspended', 'status'] }),
     Object.freeze({ color: '#ead1dc', keys: ['integratedAt', 'academicHistory'] })
   ]),
   histGroups: Object.freeze([
-    Object.freeze({ color: '#d9ead3', keys: ['name', 'rga', 'cpf', 'phone', 'email', 'birthDate', 'sex', 'instagram', 'naturality'] }),
+    Object.freeze({ color: '#d9ead3', keys: ['name', 'rga', 'cpf', 'phone', 'email', 'birthDate', 'sex', 'instagram', 'birthCity', 'originState', 'naturality'] }),
     Object.freeze({ color: '#d0e0e3', keys: ['integratedAt', 'entrySemester', 'exitSemester', 'semesterCount', 'effectiveGroupTime'] }),
     Object.freeze({ color: '#fff2cc', keys: ['finalStatus', 'requestAt', 'approvedAt', 'reason'] }),
     Object.freeze({ color: '#ead1dc', keys: ['wasDirector', 'internalNote', 'status', 'academicHistory'] })
   ]),
   seletivoInscricaoGroups: Object.freeze([
-    Object.freeze({ color: '#d9ead3', headers: ['Nome', 'RGA', 'CPF', 'Telefone', 'EMAIL', 'Data de nascimento'] }),
+    Object.freeze({ color: '#d9ead3', headers: ['Nome', 'RGA', 'CPF', 'Telefone', 'EMAIL', 'Data de nascimento', 'Cidade natal', 'UF de origem'] }),
     Object.freeze({ color: '#d0e0e3', headers: ['Semestre atual'] })
   ]),
   seletivoAvaliacaoGroups: Object.freeze([
@@ -159,11 +323,26 @@ const MEMBERS_SHEET_UX = Object.freeze({
     Object.freeze({ color: '#fff2cc', headers: ['Resultado Final', 'Processado integracao', 'Data integracao sistema'] })
   ]),
   chapaGroups: Object.freeze([
-    Object.freeze({ color: '#d9ead3', headers: ['Carimbo de data/hora', 'Endereco de e-mail', 'Nome do candidato a Presidente', 'RGA do candidato a Presidente', 'Nome do candidato a Vice-Presidente', 'RGA do candidato a Vice-presidente'] }),
+    Object.freeze({ color: '#d9ead3', headers: ['Carimbo de data/hora', 'Endereco de e-mail', 'Nome do candidato a Presidente', 'Nome Completo do candidato a Presidente', 'RGA do candidato a Presidente', 'Nome do candidato a Vice-Presidente', 'Nome Completo do candidato a Vice-Presidente', 'RGA do candidato a Vice-presidente'] }),
     Object.freeze({ color: '#d0e0e3', headers: ['Proposta Basica de Gestao'] }),
     Object.freeze({ color: '#fff2cc', headers: ['Status Presidente', 'Motivos Presidente', 'Status Vice', 'Motivos Vice', 'Status da Chapa', 'Motivos da Chapa', 'Parecer automatico', 'Data/Hora da analise'] }),
     Object.freeze({ color: '#ead1dc', headers: ['Resultado final', 'Data/Hora resultado final', 'Data/Hora cancelamento', 'Observacao da diretoria'] }),
     Object.freeze({ color: '#d9d2e9', headers: ['E-mail cancelamento enviado?', 'E-mail resultado enviado?', 'Diretoria registrada?', 'E-mail chapa eleita enviado?', 'Data/Hora e-mail chapa eleita'] })
+  ]),
+  chapaProcessingGroups: Object.freeze([
+    Object.freeze({ color: '#ead1dc', headers: ['ID_CHAPA', 'LINHA_ORIGEM_INSCRICAO', 'ID_DIRETORIA_ALVO'] }),
+    Object.freeze({ color: '#d9ead3', headers: ['Carimbo de data/hora', 'Endereco de e-mail', 'Nome do candidato a Presidente', 'Nome Completo do candidato a Presidente', 'RGA do candidato a Presidente', 'Nome do candidato a Vice-Presidente', 'Nome Completo do candidato a Vice-Presidente', 'RGA do candidato a Vice-presidente'] }),
+    Object.freeze({ color: '#d0e0e3', headers: ['Proposta Basica de Gestao'] }),
+    Object.freeze({ color: '#fff2cc', headers: ['Status Presidente', 'Motivos Presidente', 'Status Vice', 'Motivos Vice', 'Status da Chapa', 'Motivos da Chapa', 'Parecer automatico', 'Data/Hora da analise'] }),
+    Object.freeze({ color: '#ead1dc', headers: ['Resultado final', 'Data/Hora resultado final', 'Data/Hora cancelamento', 'Observacao da diretoria'] }),
+    Object.freeze({ color: '#d9d2e9', headers: ['E-mail cancelamento enviado?', 'E-mail resultado enviado?', 'Diretoria registrada?', 'E-mail chapa eleita enviado?', 'Data/Hora e-mail chapa eleita'] })
+  ]),
+  lifecycleEventGroups: Object.freeze([
+    Object.freeze({ color: '#ead1dc', headers: ['ID_EVENTO_MEMBRO', 'ID_EVENTO', 'EVENT_ID', 'TIPO_EVENTO', 'TIPO', 'STATUS_EVENTO', 'STATUS', 'DATA_EVENTO', 'DATA', 'DATA_HORA_EVENTO'] }),
+    Object.freeze({ color: '#d0e0e3', headers: ['ORIGEM_MODULO', 'MODULO_ORIGEM', 'SOURCE_KEY', 'CHAVE_ORIGEM', 'ID_ORIGEM', 'SOURCE_ROW', 'LINHA_ORIGEM', 'ROW_ORIGEM'] }),
+    Object.freeze({ color: '#d9ead3', headers: ['NOME_MEMBRO', 'MEMBRO', 'NOME', 'EMAIL_MEMBRO', 'EMAIL', 'E-mail', 'RGA', 'RGA_MEMBRO'] }),
+    Object.freeze({ color: '#fff2cc', headers: ['MOTIVO', 'RAZAO_EVENTO', 'JUSTIFICATIVA', 'OBSERVACOES', 'OBSERVACAO', 'OBSERVACAO_INTERNA', 'NOTAS'] }),
+    Object.freeze({ color: '#d9d2e9', headers: ['DATA_PROCESSAMENTO_MEMBROS', 'PROCESSADO_EM', 'DATA_PROCESSAMENTO', 'ULTIMO_ERRO', 'ERRO_PROCESSAMENTO', 'MENSAGEM_ERRO'] })
   ])
 });
 
@@ -199,6 +378,35 @@ function applyMembersChapasSheetUx() {
   return members_applyChapasSheetUx_();
 }
 
+function applyMembersChapasProcessingSheetUx() {
+  return members_applyChapasProcessingSheetUx_();
+}
+
+/**
+ * Aplica UX operacional na aba oficial de eventos de vinculo.
+ *
+ * @return {Object}
+ */
+function applyMembersLifecycleEventsSheetUx() {
+  return members_applyLifecycleEventsSheetUx_();
+}
+
+function applyMembersExternalContactsSheetUx() {
+  return Object.freeze({
+    ok: true,
+    participants: members_applyExternalParticipantsSheetUx_(),
+    professors: members_applyExternalProfessorsSheetUx_()
+  });
+}
+
+function applyMembersExternalParticipantsSheetUx() {
+  return members_applyExternalParticipantsSheetUx_();
+}
+
+function applyMembersExternalProfessorsSheetUx() {
+  return members_applyExternalProfessorsSheetUx_();
+}
+
 function members_applySheetUx_() {
   return Object.freeze({
     ok: true,
@@ -207,7 +415,11 @@ function members_applySheetUx_() {
     history: members_applyHistorySheetUx_(),
     seletivoInscricao: members_applySeletivoInscricaoSheetUx_(),
     seletivoAvaliacao: members_applySeletivoAvaliacaoSheetUx_(),
-    chapas: members_applyChapasSheetUx_()
+    chapas: members_applyChapasSheetUx_(),
+    chapasProcessing: members_applyChapasProcessingSheetUx_(),
+    lifecycleEvents: members_applyLifecycleEventsSheetUx_(),
+    externalParticipants: members_applyExternalParticipantsSheetUx_(),
+    externalProfessors: members_applyExternalProfessorsSheetUx_()
   });
 }
 
@@ -221,6 +433,12 @@ function members_applyFutureSheetUx_() {
 }
 
 function members_applyCurrentSheetUx_() {
+  if (typeof members_ensureGovernanceCurrentHeaders_ === 'function') {
+    try {
+      members_ensureGovernanceCurrentHeaders_();
+    } catch (err) {}
+  }
+
   return members_applyAliasedSheetUx_(SETTINGS.currentKey, 'current', MEMBERS_SHEET_UX.currentNotes, MEMBERS_SHEET_UX.currentGroups, {
     'Status': { values: [SETTINGS.values.active, SETTINGS.values.suspended, SETTINGS.values.offboarded], allowInvalid: true, helpText: 'Status cadastral sugerido para MEMBERS_ATUAIS.' }
   }, {
@@ -272,6 +490,113 @@ function members_applyChapasSheetUx_() {
   }, {
     compactTextHeaders: ['Proposta Basica de Gestao', 'Motivos Presidente', 'Motivos Vice', 'Motivos da Chapa', 'Parecer automatico', 'Observacao da diretoria']
   });
+}
+
+function members_applyChapasProcessingSheetUx_() {
+  var yesValue = SETTINGS.election.emailSentYes || 'SIM';
+  var noValue = SETTINGS.election.emailSentNo || 'NAO';
+  return members_applyExactSheetUx_(SETTINGS.election.processingKey, MEMBERS_SHEET_UX.chapaProcessingNotes, MEMBERS_SHEET_UX.chapaProcessingGroups, {
+    'Status Presidente': { values: [SETTINGS.election.statusDeferida, SETTINGS.election.statusIndeferida], allowInvalid: true, helpText: 'Resultado automatico esperado para o Presidente.' },
+    'Status Vice': { values: [SETTINGS.election.statusDeferida, SETTINGS.election.statusIndeferida], allowInvalid: true, helpText: 'Resultado automatico esperado para o Vice.' },
+    'Status da Chapa': { values: [SETTINGS.election.statusDeferida, SETTINGS.election.statusIndeferida], allowInvalid: true, helpText: 'Resultado automatico consolidado da chapa.' },
+    'Resultado final': { values: [SETTINGS.election.statusIndeferida, SETTINGS.election.statusEleita, SETTINGS.election.statusNaoEleita, SETTINGS.election.statusCancelada], allowInvalid: true, helpText: 'Decisao final manual ou automatica do processo eleitoral.' },
+    'E-mail cancelamento enviado?': { values: [yesValue, noValue], allowInvalid: true, helpText: 'Controle tecnico do envio do cancelamento.' },
+    'E-mail resultado enviado?': { values: [yesValue, noValue], allowInvalid: true, helpText: 'Controle tecnico do email de resultado.' },
+    'Diretoria registrada?': { values: [SETTINGS.election.registeredYes || 'SIM', SETTINGS.election.registeredNo || 'NAO'], allowInvalid: true, helpText: 'Controle tecnico do registro da diretoria.' },
+    'E-mail chapa eleita enviado?': { values: [yesValue, noValue], allowInvalid: true, helpText: 'Controle tecnico do email da chapa eleita.' }
+  }, {
+    compactTextHeaders: ['Proposta Basica de Gestao', 'Motivos Presidente', 'Motivos Vice', 'Motivos da Chapa', 'Parecer automatico', 'Observacao da diretoria']
+  });
+}
+
+/**
+ * Aplica UX operacional na base de eventos de vinculo compartilhada com o core.
+ *
+ * @return {Object}
+ */
+function members_applyLifecycleEventsSheetUx_() {
+  return members_applyExactSheetUx_(
+    SETTINGS.lifecycle.eventKey,
+    MEMBERS_SHEET_UX.lifecycleEventNotes,
+    MEMBERS_SHEET_UX.lifecycleEventGroups,
+    {
+      'STATUS_EVENTO': {
+        values: [SETTINGS.lifecycle.registeredStatus, SETTINGS.lifecycle.homologatedStatus, SETTINGS.lifecycle.processedMembersStatus],
+        allowInvalid: true,
+        helpText: 'Status operacionais conhecidos no fluxo de eventos de vinculo.'
+      },
+      'STATUS': {
+        values: [SETTINGS.lifecycle.registeredStatus, SETTINGS.lifecycle.homologatedStatus, SETTINGS.lifecycle.processedMembersStatus],
+        allowInvalid: true,
+        helpText: 'Status operacionais conhecidos no fluxo de eventos de vinculo.'
+      },
+      'ORIGEM_MODULO': {
+        values: [SETTINGS.lifecycle.activitiesModule, SETTINGS.lifecycle.membersModule],
+        allowInvalid: true,
+        helpText: 'Modulos conhecidos que alimentam esta base.'
+      },
+      'MODULO_ORIGEM': {
+        values: [SETTINGS.lifecycle.activitiesModule, SETTINGS.lifecycle.membersModule],
+        allowInvalid: true,
+        helpText: 'Modulos conhecidos que alimentam esta base.'
+      }
+    },
+    {
+      centerData: true,
+      compactTextHeaders: [
+        'SOURCE_KEY',
+        'CHAVE_ORIGEM',
+        'ID_ORIGEM',
+        'MOTIVO',
+        'RAZAO_EVENTO',
+        'JUSTIFICATIVA',
+        'OBSERVACOES',
+        'OBSERVACAO',
+        'OBSERVACAO_INTERNA',
+        'NOTAS',
+        'ULTIMO_ERRO',
+        'ERRO_PROCESSAMENTO',
+        'MENSAGEM_ERRO'
+      ]
+    }
+  );
+}
+
+function members_applyExternalParticipantsSheetUx_() {
+  return members_applyExactSheetUx_(
+    SETTINGS.externalContacts.participantsKey,
+    MEMBERS_SHEET_UX.externalParticipantsNotes,
+    MEMBERS_SHEET_UX.externalParticipantsGroups,
+    members_buildExternalParticipantsValidation_(),
+    {
+      centerData: true,
+      compactTextHeaders: [
+        'CARGO_OU_ATUACAO',
+        'CURSO_OU_AREA',
+        'CATEGORIA_PARTICIPANTE',
+        'MOTIVACAO_OU_INTERESSE',
+        'OBSERVACOES'
+      ]
+    }
+  );
+}
+
+function members_applyExternalProfessorsSheetUx_() {
+  return members_applyExactSheetUx_(
+    SETTINGS.externalContacts.professorsKey,
+    MEMBERS_SHEET_UX.externalProfessorsNotes,
+    MEMBERS_SHEET_UX.externalProfessorsGroups,
+    members_buildExternalProfessorsValidation_(),
+    {
+      centerData: true,
+      compactTextHeaders: [
+        'DISCIPLINAS',
+        'TITULACAO',
+        'FORMACAO',
+        'OBSERVACOES'
+      ]
+    }
+  );
 }
 
 function members_applyAliasedSheetUx_(key, scope, notesByKey, groupDefs, validationByHeader, opts) {
@@ -343,6 +668,13 @@ function members_applySheetPresentation_(sheet, notesMap, colorGroups, validatio
     members_applyCompactTextUx_(sheet, opts.compactTextHeaders || [], MEMBERS_SHEET_UX.dataRowHeight);
   }));
 
+  operations.push(members_trySheetUxOperation_(sheet, 'dataAlignment', function() {
+    if (!opts.centerData || lastRow < 2 || lastColumn < 1) return;
+    sheet.getRange(2, 1, lastRow - 1, lastColumn)
+      .setHorizontalAlignment('center')
+      .setVerticalAlignment('middle');
+  }));
+
   operations.push(members_trySheetUxOperation_(sheet, 'dropdownValidation', function() {
     if (!validationRules || !Object.keys(validationRules).length) return;
     if (members_coreHas_('coreApplyDropdownValidationByHeader')) {
@@ -397,6 +729,96 @@ function members_applyCompactTextUx_(sheet, headerNames, rowHeight) {
       .setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP)
       .setVerticalAlignment('middle');
   });
+}
+
+function members_buildExternalParticipantsValidation_() {
+  var yesNo = members_buildExternalYesNoValidationRule_(
+    'Controle sugerido para flags de interesse, comunicacao e status da base de pessoas externas.'
+  );
+
+  return {
+    'CATEGORIA_PUBLICO': {
+      values: SETTINGS.externalContacts.categoryPublicoValues,
+      allowInvalid: true,
+      helpText: 'Classifica o tipo de publico externo ao qual a pessoa pertence.'
+    },
+    'RELACAO_COM_GEAPA': {
+      values: SETTINGS.externalContacts.relationGeapaValues,
+      allowInvalid: true,
+      helpText: 'Descreve como essa pessoa se relaciona hoje com o GEAPA.'
+    },
+    'RECEBE_COMUNICADOS_GERAIS': yesNo,
+    'RECEBE_REUNIOES_ABERTAS': yesNo,
+    'RECEBE_APRESENTACOES_ALUNOS': yesNo,
+    'RECEBE_EVENTOS_VISITAS': yesNo,
+    'INTERESSE_EIXO_I': yesNo,
+    'INTERESSE_EIXO_II': yesNo,
+    'INTERESSE_EIXO_III': yesNo,
+    'INTERESSE_EIXO_IV': yesNo,
+    'INTERESSE_EIXO_V': yesNo,
+    'INTERESSE_EIXO_VI': yesNo,
+    'INTERESSE_EIXO_VII': yesNo,
+    'INTERESSE_EIXO_VIII': yesNo,
+    'ATIVO': yesNo
+  };
+}
+
+function members_buildExternalProfessorsValidation_() {
+  var yesNo = members_buildExternalYesNoValidationRule_(
+    'Controle sugerido para comunicacao e status da base docente.'
+  );
+  var axisValues = members_getExternalContactsAxisValidationValues_();
+  var validation = {
+    'RECEBE_COMUNICADOS_GERAIS': yesNo,
+    'RECEBE_REUNIOES_ABERTAS': yesNo,
+    'RECEBE_APRESENTACOES_ALUNOS': yesNo,
+    'RECEBE_EVENTOS_VISITAS': yesNo,
+    'ATIVO': yesNo
+  };
+
+  if (axisValues.length) {
+    validation['EIXO_TEMATICO_1'] = {
+      values: axisValues,
+      allowInvalid: true,
+      helpText: 'Lista sugerida a partir da planilha oficial de eixos ativos.'
+    };
+    validation['EIXO_TEMATICO_2'] = {
+      values: axisValues,
+      allowInvalid: true,
+      helpText: 'Lista sugerida a partir da planilha oficial de eixos ativos.'
+    };
+  }
+
+  return validation;
+}
+
+function members_buildExternalYesNoValidationRule_(helpText) {
+  return {
+    values: [
+      SETTINGS.externalContacts.yes,
+      SETTINGS.externalContacts.no
+    ],
+    allowInvalid: true,
+    helpText: helpText || 'Valores sugeridos: SIM ou NAO.'
+  };
+}
+
+function members_getExternalContactsAxisValidationValues_() {
+  if (typeof members_externalContactsLoadActiveAxes_ !== 'function') {
+    return [];
+  }
+
+  try {
+    return members_externalContactsLoadActiveAxes_()
+      .map(function(axis) {
+        return axis && axis.canonical ? String(axis.canonical).trim() : '';
+      })
+      .filter(function(value, index, list) {
+        return value && list.indexOf(value) === index;
+      });
+  } catch (err) {
+    return [];
+  }
 }
 
 function members_applyHeaderNotesFallback_(sheet, notesByHeader) {

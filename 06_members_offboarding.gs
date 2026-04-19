@@ -144,9 +144,7 @@ function members_buildHistoryRowFromCurrentAndOffboard_(currentRow, currentHeade
   const wasDirector = members_hasDirectorHistoryByRga_(rga) ? "Sim" : "Nao";
   const effectiveGroupTime = members_getEffectiveGroupTimeDisplay_(integratedAt, approvedAt);
 
-  const automaticNote =
-    "Migrado automaticamente de MEMBERS_ATUAIS para MEMBERS_HIST apos deferimento " +
-    "de desligamento imediato no formulario oficial. Match por " + matchBy + ".";
+  const automaticNote = members_buildOffboardingInternalNote_(payload, matchBy);
 
   histHeaders.forEach((header, idx) => {
     if (members_histHeaderMatches_(header, "Membro")) {
@@ -181,8 +179,16 @@ function members_buildHistoryRowFromCurrentAndOffboard_(currentRow, currentHeade
       output[idx] = members_pickValue_(currentRow, currentMap, ["instagram", "@ instagram"]);
       return;
     }
+    if (members_histHeaderMatches_(header, members_getHeaderAliases_("hist", "birthCity"))) {
+      output[idx] = members_pickValue_(currentRow, currentMap, members_getHeaderAliases_("current", "birthCity"));
+      return;
+    }
+    if (members_histHeaderMatches_(header, members_getHeaderAliases_("hist", "originState"))) {
+      output[idx] = members_pickValue_(currentRow, currentMap, members_getHeaderAliases_("current", "originState"));
+      return;
+    }
     if (members_histHeaderMatches_(header, "Naturalidade")) {
-      output[idx] = members_pickValue_(currentRow, currentMap, ["naturalidade"]);
+      output[idx] = members_pickValue_(currentRow, currentMap, members_getHeaderAliases_("current", "naturality"));
       return;
     }
     if (members_histHeaderMatches_(header, "Participa/Participou de algum/alguns laboratório(s), projeto(s), pesquisa(s), empresa júnior, monitoria, etc? se sim, citar qual/quais.")) {
@@ -256,6 +262,27 @@ function members_buildHistoryRowFromCurrentAndOffboard_(currentRow, currentHeade
   return output;
 }
 
+function members_buildOffboardingInternalNote_(payload, matchBy) {
+  const sourceDescription = String(payload.offboardingSourceDescription || "").trim() ||
+    "deferimento de desligamento imediato no formulario oficial";
+  const sourceKey = String(payload.sourceKey || "").trim();
+  const customNote = String(payload.internalNote || "").trim();
+
+  let note =
+    "Migrado automaticamente de MEMBERS_ATUAIS para MEMBERS_HIST apos " +
+    sourceDescription + ". Match por " + matchBy + ".";
+
+  if (sourceKey) {
+    note += " sourceKey=" + sourceKey + ".";
+  }
+
+  if (customNote) {
+    note += " " + customNote;
+  }
+
+  return note;
+}
+
 function members_historyFindEquivalentRow_(histSheet, payload) {
   const records = members_readSheetRecordsCompat_(histSheet);
   const targetRga = members_normalizeKey_(payload.memberRga);
@@ -291,7 +318,7 @@ function members_hasDirectorHistoryByRga_(rga) {
   return records.some(record => members_normalizeKey_(record["RGA"]) === normalizedRga);
 }
 
-function members_pickValue_(row, map, candidates) {
+function members_pickValueDirect_(row, map, candidates) {
   for (let i = 0; i < candidates.length; i++) {
     const idx = map[members_normalizeOffboardingHeader_(candidates[i])];
     if (idx != null && idx >= 0) return row[idx];
@@ -302,6 +329,29 @@ function members_pickValue_(row, map, candidates) {
     if (!members_aliasesMatchKnownHeaderGroup_(keys[i], candidates)) continue;
     const idx = map[keys[i]];
     if (idx != null && idx >= 0) return row[idx];
+  }
+
+  return "";
+}
+
+function members_pickValue_(row, map, candidates) {
+  const directValue = members_pickValueDirect_(row, map, candidates);
+  if (directValue !== "") return directValue;
+
+  const wantsBirthCity = members_aliasesMatchKnownHeaderGroup_("CIDADE_NATAL", candidates);
+  const wantsOriginState = members_aliasesMatchKnownHeaderGroup_("UF_ORIGEM", candidates);
+  const wantsNaturality = members_aliasesMatchKnownHeaderGroup_("NATURALIDADE", candidates);
+
+  if (wantsBirthCity || wantsOriginState) {
+    const legacyNaturality = members_pickValueDirect_(row, map, ["Naturalidade", "NATURALIDADE"]);
+    const parsedNaturality = members_parseNaturalityValue_(legacyNaturality);
+    return wantsBirthCity ? parsedNaturality.city : parsedNaturality.uf;
+  }
+
+  if (wantsNaturality) {
+    const birthCity = members_pickValueDirect_(row, map, ["Cidade natal", "CIDADE_NATAL"]);
+    const originState = members_pickValueDirect_(row, map, ["UF de origem", "UF_ORIGEM"]);
+    return members_composeNaturalityValue_(birthCity, originState);
   }
 
   return "";
