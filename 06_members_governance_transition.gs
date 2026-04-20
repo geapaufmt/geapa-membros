@@ -979,6 +979,54 @@ function members_evaluateGovernanceEligibility_(rga, boardWindow, boardMembers, 
 }
 
 /**
+ * Reafirma a implementacao oficial da elegibilidade temporal sem depender do fluxo de formulario.
+ *
+ * @param {string} rga
+ * @param {Object} boardWindow
+ * @param {Array<Object>} boardMembers
+ * @param {Object} cargoCatalog
+ * @param {Object<string, Object>} boardsById
+ * @param {Array<Object>} semesterWindows
+ * @param {Object=} opts
+ * @return {Object}
+ */
+function members_evaluateGovernanceEligibility_(rga, boardWindow, boardMembers, cargoCatalog, boardsById, semesterWindows, opts) {
+  opts = opts || {};
+  var limitWindows = members_getGovernanceLimitWindows_(semesterWindows, boardWindow ? boardWindow.start : new Date());
+  var limitDays = limitWindows.reduce(function(total, window) {
+    return total + members_getInclusiveDaysBetween_(window.start, window.end);
+  }, 0);
+  var countedDays = members_calculateGovernanceConsumedDays_(
+    rga,
+    boardMembers,
+    cargoCatalog,
+    boardsById,
+    semesterWindows,
+    { consumptionReferenceDate: opts.consumptionReferenceDate }
+  );
+  var balanceDays = Math.max(0, limitDays - countedDays);
+  var boardDays = boardWindow ? members_getInclusiveDaysBetween_(boardWindow.start, boardWindow.end) : 0;
+  var estimatedLimitDate = members_estimateGovernanceLimitDate_(boardWindow, balanceDays, semesterWindows);
+  var status = SETTINGS.governance.states.inelegivel;
+
+  if (balanceDays <= 0) {
+    status = SETTINGS.governance.states.inelegivel;
+  } else if (boardDays > 0 && balanceDays < boardDays) {
+    status = SETTINGS.governance.states.aptoComLimite;
+  } else {
+    status = SETTINGS.governance.states.apto;
+  }
+
+  return Object.freeze({
+    countedDays: countedDays,
+    limitDays: limitDays,
+    balanceDays: balanceDays,
+    status: status,
+    estimatedLimitDate: estimatedLimitDate
+  });
+}
+
+/**
  * Indexa as janelas de diretoria por id para consultas de intervalo.
  *
  * @param {Array<Object>} boards
