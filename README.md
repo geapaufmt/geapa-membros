@@ -129,6 +129,7 @@ Fluxo:
 - registra a saída em `MEMBERS_HIST`;
 - preserva dados como solicitação, homologação, semestre de saída e motivo;
 - remove o membro de `MEMBERS_ATUAIS`;
+- quando o desligamento homologado vier do fluxo disciplinar por faltas, enfileira um e-mail institucional ao membro pela `MAIL_SAIDA`;
 - executa sincronização de campos derivados após a remoção.
 
 ### 6. Chapas e diretoria
@@ -161,6 +162,7 @@ Fluxo:
 - faz upsert por e-mail em `PROFS_BASE` ou `PESSOAS_EXTERNAS_BASE`;
 - transforma a escolha `Todos` nos eixos tematicos em `SIM` para todos os `INTERESSE_EIXO_*` da base de externos;
 - garante ids (`ID_PROFESSOR` / `ID_PARTICIPANTE_EXTERNO`) sem renumerar registros antigos.
+- para participantes externos, a geracao de `ID_PARTICIPANTE_EXTERNO` ocorre localmente no importador sobre `PESSOAS_EXTERNAS_BASE`, evitando dependencia de apontamentos legados do core para a base antiga `PARTICIPANTES_EXTERNOS_BASE`.
 
 ### 8. Transicao de diretoria, nomeacoes e conselheiros
 
@@ -170,7 +172,7 @@ Arquivo principal:
 
 Fluxo:
 
-- reaproveita `VIGENCIA_DIRETORIAS`, `VIGENCIA_MEMBROS_DIRETORIAS`, `VIGENCIA_SEMESTRES_DIRETORIAS`, `VIGENCIA_CONSELHEIROS` e `CARGOS_INSTITUCIONAIS_CONFIG` via `GEAPA-CORE`;
+- reaproveita `VIGENCIA_DIRETORIAS`, `VIGENCIA_MEMBROS_DIRETORIAS`, `VIGENCIA_ASSESSORES`, `VIGENCIA_SEMESTRES_DIRETORIAS`, `VIGENCIA_CONSELHEIROS` e `CARGOS_INSTITUCIONAIS_CONFIG` via `GEAPA-CORE`;
 - recalcula em `MEMBERS_ATUAIS` o painel de elegibilidade temporal:
 - `QTD_DIAS_QUE_CONTAM_PARA_LIMITE_DIRETORIA`
 - `LIMITE_DIAS_DIRETORIA`
@@ -179,13 +181,17 @@ Fluxo:
 - `DATA_LIMITE_ESTIMADA_DIRETORIA`
 - processa `DIRETORIA_NOMEACOES_RESPONSES` sem reimplementar o fluxo de Presidente e Vice;
 - valida cargo no catalogo oficial, disponibilidade por `ID_Diretoria`, existencia do membro em `MEMBERS_ATUAIS`, compatibilidade entre `RGA` e nome, e elegibilidade temporal;
-- registra em `VIGENCIA_MEMBROS_DIRETORIAS` apenas nomeacoes `APTO` ou `APTO_COM_LIMITE`;
+- usa `CARGOS_INSTITUCIONAIS_CONFIG.DESTINO_VIGENCIA` como fonte oficial para decidir se o vinculo vai para `VIGENCIA_MEMBROS_DIRETORIAS`, `VIGENCIA_ASSESSORES` ou `VIGENCIA_CONSELHEIROS`, com fallback pelo grupo do cargo;
+- registra nomeacoes `APTO` ou `APTO_COM_LIMITE` na aba oficial correspondente ao destino configurado do cargo;
 - enfileira pela `MAIL_SAIDA` a devolutiva automatica da analise de nomeacao;
 - quando a nomeacao e confirmada com registro novo, envia tambem um e-mail direto ao nomeado com o cargo confirmado e eventual limite temporal;
 - sincroniza as opcoes de `DIRETORIA_NOMEACOES_FORM` com base na diretoria alvo e nos cargos vagos permitidos via formulario;
-- identifica membros da diretoria de saida, envia convite para `CONSELHEIROS_ADESAO_FORM` e processa `CONSELHEIROS_ADESAO_RESPONSES`;
+- identifica diretores de saida, envia convite para `CONSELHEIROS_ADESAO_FORM` e processa `CONSELHEIROS_ADESAO_RESPONSES`;
+- o convite para conselho considera apenas diretores com pelo menos 3 meses no cargo e que nao estejam reconduzidos para a proxima gestao;
 - registra conselheiros aceitos em `VIGENCIA_CONSELHEIROS`;
-- sincroniza os acessos das pastas `ADMINISTRATIVO_PASTA` e `TRANSICAO_CONSELHEIROS_PASTA` de forma idempotente.
+- sincroniza os acessos das pastas `ADMINISTRATIVO_PASTA` e `TRANSICAO_CONSELHEIROS_PASTA` de forma idempotente;
+- apenas diretores entram automaticamente no sync de acesso do Drive; assessores ficam fora do acesso automatico e so permanecem quando houver concessao manual excepcional ainda compatível com o vinculo ativo.
+- falhas do Drive ao listar ou conceder permissoes nao interrompem mais a rotina inteira e passam a registrar `likelyCause` quando houver indicio de bloqueio por compartilhamento externo ou permissao insuficiente.
 
 ---
 
@@ -314,8 +320,8 @@ Entrega de 18/04/2026:
 - elegibilidade temporal agora usa `Semestres_Diretoria` como regua oficial proporcional por dias;
 - nomeacoes podem resultar em `APTO`, `APTO_COM_LIMITE` ou `INELEGIVEL`;
 - a chapa eleita passa a receber no e-mail de parabenizacao os links operacionais de transicao, consulta e nomeacao;
-- ex-diretores podem aderir ao conselho consultivo por formulario, com registro oficial em `VIGENCIA_CONSELHEIROS`;
-- acessos de Drive passam a ser sincronizados automaticamente para diretoria vigente, chapa em transicao e conselheiros ativos.
+- ex-diretores podem aderir ao conselho consultivo por formulario, com registro oficial em `VIGENCIA_CONSELHEIROS`, desde que nao tenham sido reconduzidos para a proxima gestao e tenham cumprido pelo menos 3 meses no cargo;
+- acessos de Drive passam a ser sincronizados automaticamente para diretores da diretoria vigente, diretores da chapa em transicao e conselheiros ativos, mantendo assessores fora do acesso automatico.
 
 ---
 
@@ -383,6 +389,7 @@ Fluxo:
 - processa apenas `TIPO_EVENTO = DESLIGAMENTO_POR_FALTAS` com `STATUS_EVENTO = HOMOLOGADO`;
 - monta payload compativel com `members_offboardApprovedImmediateExit`;
 - reaproveita o offboarding oficial para mover de `MEMBERS_ATUAIS` para `MEMBERS_HIST`;
+- enfileira um e-mail de confirmação de desligamento homologado por faltas para o membro, quando houver e-mail válido e Mail Hub disponível;
 - garante idempotencia verificando status do evento, presenca em `MEMBERS_ATUAIS` e historico equivalente em `MEMBERS_HIST`;
 - apos sucesso, atualiza o evento via API publica do `GEAPA-CORE` com `eventStatus = PROCESSADO_MEMBROS`, `notes`, `processedByModule` e `processingDate`;
 - em erro, registra via API publica do core `notes`, `processedByModule`, `processingDate` e `processingError`, preservando o caso para retry.
