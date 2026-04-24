@@ -20,6 +20,7 @@ const SETTINGS = Object.freeze({
     semestres: "VIGENCIA_SEMESTRES",
     diretorias: "VIGENCIA_DIRETORIAS",
     membrosDiretoria: "VIGENCIA_MEMBROS_DIRETORIAS",
+    assessores: "VIGENCIA_ASSESSORES",
     semestresDiretoria: "VIGENCIA_SEMESTRES_DIRETORIAS",
     conselheiros: "VIGENCIA_CONSELHEIROS",
     cargosConfig: "CARGOS_INSTITUCIONAIS_CONFIG"
@@ -246,9 +247,14 @@ timeoutDays: 7,
       uniqueYes: "SIM",
       activeYes: "SIM",
       statusAtivo: "ATIVO",
+      cargoDestinationHeader: "DESTINO_VIGENCIA",
       cargoGrupoDiretoria: "DIRETORIA",
       cargoGrupoAssessoria: "ASSESSORIA",
-      cargoConselheiroNome: "Conselheiro(a) Consultivo(a)"
+      cargoGrupoConselho: "CONSELHO",
+      cargoConselheiroNome: "Conselheiro(a) Consultivo(a)",
+      destinationDiretoria: "MEMBROS_DIRETORIA",
+      destinationAssessoria: "ASSESSORES",
+      destinationConselho: "CONSELHEIROS"
     }),
 
     currentHeaders: Object.freeze({
@@ -261,7 +267,8 @@ timeoutDays: 7,
 
     limits: Object.freeze({
       maxDiretoriaSemesters: 3,
-      councilorInvitationLeadDays: 30
+      councilorInvitationLeadDays: 14,
+      councilorMinimumRoleMonths: 3
     }),
 
     email: Object.freeze({

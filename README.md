@@ -170,7 +170,7 @@ Arquivo principal:
 
 Fluxo:
 
-- reaproveita `VIGENCIA_DIRETORIAS`, `VIGENCIA_MEMBROS_DIRETORIAS`, `VIGENCIA_SEMESTRES_DIRETORIAS`, `VIGENCIA_CONSELHEIROS` e `CARGOS_INSTITUCIONAIS_CONFIG` via `GEAPA-CORE`;
+- reaproveita `VIGENCIA_DIRETORIAS`, `VIGENCIA_MEMBROS_DIRETORIAS`, `VIGENCIA_ASSESSORES`, `VIGENCIA_SEMESTRES_DIRETORIAS`, `VIGENCIA_CONSELHEIROS` e `CARGOS_INSTITUCIONAIS_CONFIG` via `GEAPA-CORE`;
 - recalcula em `MEMBERS_ATUAIS` o painel de elegibilidade temporal:
 - `QTD_DIAS_QUE_CONTAM_PARA_LIMITE_DIRETORIA`
 - `LIMITE_DIAS_DIRETORIA`
@@ -179,11 +179,13 @@ Fluxo:
 - `DATA_LIMITE_ESTIMADA_DIRETORIA`
 - processa `DIRETORIA_NOMEACOES_RESPONSES` sem reimplementar o fluxo de Presidente e Vice;
 - valida cargo no catalogo oficial, disponibilidade por `ID_Diretoria`, existencia do membro em `MEMBERS_ATUAIS`, compatibilidade entre `RGA` e nome, e elegibilidade temporal;
-- registra em `VIGENCIA_MEMBROS_DIRETORIAS` apenas nomeacoes `APTO` ou `APTO_COM_LIMITE`;
+- usa `CARGOS_INSTITUCIONAIS_CONFIG.DESTINO_VIGENCIA` como fonte oficial para decidir se o vinculo vai para `VIGENCIA_MEMBROS_DIRETORIAS`, `VIGENCIA_ASSESSORES` ou `VIGENCIA_CONSELHEIROS`, com fallback pelo grupo do cargo;
+- registra nomeacoes `APTO` ou `APTO_COM_LIMITE` na aba oficial correspondente ao destino configurado do cargo;
 - enfileira pela `MAIL_SAIDA` a devolutiva automatica da analise de nomeacao;
 - quando a nomeacao e confirmada com registro novo, envia tambem um e-mail direto ao nomeado com o cargo confirmado e eventual limite temporal;
 - sincroniza as opcoes de `DIRETORIA_NOMEACOES_FORM` com base na diretoria alvo e nos cargos vagos permitidos via formulario;
-- identifica membros da diretoria de saida, envia convite para `CONSELHEIROS_ADESAO_FORM` e processa `CONSELHEIROS_ADESAO_RESPONSES`;
+- identifica diretores de saida, envia convite para `CONSELHEIROS_ADESAO_FORM` e processa `CONSELHEIROS_ADESAO_RESPONSES`;
+- o convite para conselho considera apenas diretores com pelo menos 3 meses no cargo e que nao estejam reconduzidos para a proxima gestao;
 - registra conselheiros aceitos em `VIGENCIA_CONSELHEIROS`;
 - sincroniza os acessos das pastas `ADMINISTRATIVO_PASTA` e `TRANSICAO_CONSELHEIROS_PASTA` de forma idempotente.
 
@@ -314,7 +316,7 @@ Entrega de 18/04/2026:
 - elegibilidade temporal agora usa `Semestres_Diretoria` como regua oficial proporcional por dias;
 - nomeacoes podem resultar em `APTO`, `APTO_COM_LIMITE` ou `INELEGIVEL`;
 - a chapa eleita passa a receber no e-mail de parabenizacao os links operacionais de transicao, consulta e nomeacao;
-- ex-diretores podem aderir ao conselho consultivo por formulario, com registro oficial em `VIGENCIA_CONSELHEIROS`;
+- ex-diretores podem aderir ao conselho consultivo por formulario, com registro oficial em `VIGENCIA_CONSELHEIROS`, desde que nao tenham sido reconduzidos para a proxima gestao e tenham cumprido pelo menos 3 meses no cargo;
 - acessos de Drive passam a ser sincronizados automaticamente para diretoria vigente, chapa em transicao e conselheiros ativos.
 
 ---

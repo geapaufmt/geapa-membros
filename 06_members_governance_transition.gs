@@ -244,13 +244,19 @@ function members_buildGovernanceFolderUrl_(key) {
  */
 function members_buildGovernanceFormUrl_(key) {
   var form = members_openGovernanceFormByKey_(key);
-  if (!form) return "";
+  var registryUrl = String(members_getGovernanceRegistryUrl_(key) || "").trim();
+  if (!form) {
+    return registryUrl;
+  }
 
   try {
-    return String(form.getPublishedUrl() || "").trim();
+    var publishedUrl = String(form.getPublishedUrl() || "").trim();
+    if (publishedUrl) return publishedUrl;
   } catch (err) {
-    return "";
+    // Mantem fallback para a URL cadastrada no Registry quando o Forms nao devolve a publicacao.
   }
+
+  return registryUrl;
 }
 
 /**
@@ -317,6 +323,55 @@ function members_setGovernanceProcessingState_(prefix, token, value) {
     key,
     String(value || new Date().toISOString())
   );
+}
+
+/**
+ * Remove os registros mais recentes de convite para conselheiros salvos em ScriptProperties.
+ *
+ * Uso:
+ * - sem parametro: apaga os 6 convites mais recentes;
+ * - com parametro numerico: apaga a quantidade informada.
+ *
+ * @param {number=} limit
+ * @return {Object}
+ */
+function members_clearRecentCouncilorInviteStates(limit) {
+  var maxItems = Math.max(1, Number(limit || 6) || 6);
+  var prefix = String(SETTINGS.governance.properties.councilorInvitePrefix || "");
+  var props = members_getGovernanceScriptProperties_();
+  var all = props.getProperties() || {};
+  var entries = Object.keys(all).filter(function(key) {
+    return key.indexOf(prefix) === 0;
+  }).map(function(key) {
+    var rawValue = String(all[key] || "").trim();
+    var parsed = new Date(rawValue);
+    return {
+      key: key,
+      value: rawValue,
+      timestamp: isNaN(parsed.getTime()) ? 0 : parsed.getTime()
+    };
+  }).sort(function(a, b) {
+    if (b.timestamp !== a.timestamp) return b.timestamp - a.timestamp;
+    return String(b.value || "").localeCompare(String(a.value || ""));
+  });
+
+  var targets = entries.slice(0, maxItems);
+  targets.forEach(function(item) {
+    props.deleteProperty(item.key);
+  });
+
+  members_logGovernanceEvent_("COUNCILOR_INVITE_STATE_CLEARED", {
+    requested: maxItems,
+    deleted: targets.length,
+    keys: targets.map(function(item) { return item.key; })
+  });
+
+  return {
+    ok: true,
+    requested: maxItems,
+    deleted: targets.length,
+    keys: targets.map(function(item) { return item.key; })
+  };
 }
 
 /**
@@ -422,6 +477,21 @@ function members_addGovernanceDays_(date, days) {
 }
 
 /**
+ * Soma meses de calendario a uma data, preservando a normalizacao no inicio do dia.
+ *
+ * @param {Date} date
+ * @param {number} months
+ * @return {?Date}
+ */
+function members_addGovernanceMonths_(date, months) {
+  var base = members_toGovernanceDate_(date);
+  if (!base) return null;
+  var next = new Date(base.getTime());
+  next.setMonth(next.getMonth() + Number(months || 0));
+  return members_startOfDay_(next);
+}
+
+/**
  * Formata datas em padrao legivel para emails e logs.
  *
  * @param {*} value
@@ -491,6 +561,7 @@ function members_readGovernanceCargoCatalog_() {
     var namePublic = String(record["NOME_PUBLICO"] || "").trim();
     var cargoKey = String(record["CARGO_KEY"] || "").trim();
     var groupName = String(record["GRUPO_CARGO"] || "").trim();
+    var destination = members_resolveGovernanceCargoDestinationRaw_(record);
     var variants = members_splitGovernanceVariants_(record["ESCRITA_VARIACAO"]);
     var compareKeys = [namePublic, cargoKey].concat(variants).map(members_normalizeGovernanceText_).filter(Boolean);
 
@@ -499,6 +570,7 @@ function members_readGovernanceCargoCatalog_() {
       nomePublico: namePublic,
       cargoKey: cargoKey,
       grupoCargo: groupName,
+      destinoVigencia: destination,
       ativo: members_isGovernanceYes_(record["ATIVO"]),
       obrigatorioComposicaoInicial: members_isGovernanceYes_(record["OBRIGATORIO_COMPOSICAO_INICIAL"]),
       cargoUnico: members_isGovernanceYes_(record["\u00c9_CARGO_UNICO"] || record["E_CARGO_UNICO"]),
@@ -520,6 +592,112 @@ function members_readGovernanceCargoCatalog_() {
       return map;
     }, {})
   });
+}
+
+/**
+ * Resolve o destino de vigencia configurado para um cargo, com fallback pelo grupo institucional.
+ *
+ * @param {Object} record
+ * @return {string}
+ */
+function members_resolveGovernanceCargoDestinationRaw_(record) {
+  var explicit = members_normalizeGovernanceText_(
+    members_getGovernanceRecordValue_(record, [
+      SETTINGS.governance.values.cargoDestinationHeader,
+      "DESTINO_VIGENCIA",
+      "Destino Vigencia",
+      "Destino de Vigencia",
+      "Destino de Vigência"
+    ])
+  );
+
+  if (explicit === members_normalizeGovernanceText_(SETTINGS.governance.values.destinationDiretoria)) {
+    return SETTINGS.governance.values.destinationDiretoria;
+  }
+  if (explicit === members_normalizeGovernanceText_(SETTINGS.governance.values.destinationAssessoria)) {
+    return SETTINGS.governance.values.destinationAssessoria;
+  }
+  if (explicit === members_normalizeGovernanceText_(SETTINGS.governance.values.destinationConselho)) {
+    return SETTINGS.governance.values.destinationConselho;
+  }
+
+  var groupName = members_normalizeGovernanceText_(record["GRUPO_CARGO"]);
+  if (groupName === members_normalizeGovernanceText_(SETTINGS.governance.values.cargoGrupoAssessoria)) {
+    return SETTINGS.governance.values.destinationAssessoria;
+  }
+  if (groupName === members_normalizeGovernanceText_(SETTINGS.governance.values.cargoGrupoConselho)) {
+    return SETTINGS.governance.values.destinationConselho;
+  }
+
+  return SETTINGS.governance.values.destinationDiretoria;
+}
+
+/**
+ * Converte um destino de vigencia no respectivo Registry KEY da aba oficial.
+ *
+ * @param {string} destination
+ * @return {string}
+ */
+function members_getGovernanceDestinationSheetKey_(destination) {
+  var normalized = members_normalizeGovernanceText_(destination);
+  if (normalized === members_normalizeGovernanceText_(SETTINGS.governance.values.destinationAssessoria)) {
+    return SETTINGS.vigenciaKeys.assessores;
+  }
+  if (normalized === members_normalizeGovernanceText_(SETTINGS.governance.values.destinationConselho)) {
+    return SETTINGS.vigenciaKeys.conselheiros;
+  }
+  return SETTINGS.vigenciaKeys.membrosDiretoria;
+}
+
+/**
+ * Anota o destino de vigencia em um registro lido das abas oficiais.
+ *
+ * @param {Object} record
+ * @param {string} destination
+ * @return {Object}
+ */
+function members_tagGovernanceRecordDestination_(record, destination) {
+  var tagged = {};
+  Object.keys(record || {}).forEach(function(key) {
+    tagged[key] = record[key];
+  });
+  tagged.__governanceDestination = destination;
+  return tagged;
+}
+
+/**
+ * Le os vinculos oficiais de governanca a partir de uma lista de destinos.
+ *
+ * @param {string[]} destinations
+ * @return {Array<Object>}
+ */
+function members_readGovernanceRecordsByDestinations_(destinations) {
+  var requested = Array.isArray(destinations) && destinations.length
+    ? destinations.slice()
+    : [
+        SETTINGS.governance.values.destinationDiretoria,
+        SETTINGS.governance.values.destinationAssessoria,
+        SETTINGS.governance.values.destinationConselho
+      ];
+  var seen = {};
+  var out = [];
+
+  requested.forEach(function(destination) {
+    var canonical = members_normalizeGovernanceText_(destination);
+    if (!canonical || seen[canonical]) return;
+    seen[canonical] = true;
+
+    var key = members_getGovernanceDestinationSheetKey_(destination);
+    var records = members_readRecordsByKey_(key, {
+      skipBlankRows: true
+    });
+
+    records.forEach(function(record) {
+      out.push(members_tagGovernanceRecordDestination_(record, destination));
+    });
+  });
+
+  return out;
 }
 
 /**
@@ -807,7 +985,7 @@ function members_getGovernanceOverlapDays_(startA, endA, startB, endB) {
 }
 
 /**
- * Resolve o intervalo efetivo de um vinculo em Membros_Diretoria.
+ * Resolve o intervalo efetivo de um vinculo de governanca.
  *
  * @param {Object} record
  * @param {Object<string, Object>} boardsById
@@ -860,19 +1038,19 @@ function members_clipGovernanceIntervalToReferenceDate_(interval, referenceDate)
  * Soma os dias historicos que contam para o limite de diretoria.
  *
  * @param {string} rga
- * @param {Array<Object>} boardMembers
+ * @param {Array<Object>} governanceRecords
  * @param {Object} cargoCatalog
  * @param {Object<string, Object>} boardsById
  * @param {Array<Object>} semesterWindows
  * @param {Object=} opts
  * @return {number}
  */
-function members_calculateGovernanceConsumedDays_(rga, boardMembers, cargoCatalog, boardsById, semesterWindows, opts) {
+function members_calculateGovernanceConsumedDays_(rga, governanceRecords, cargoCatalog, boardsById, semesterWindows, opts) {
   var targetRga = members_onlyDigitsCompat_(rga);
   if (!targetRga) return 0;
   opts = opts || {};
 
-  return (boardMembers || []).reduce(function(total, record) {
+  return (governanceRecords || []).reduce(function(total, record) {
     if (members_onlyDigitsCompat_(record["RGA"]) !== targetRga) return total;
 
     var cargo = members_resolveGovernanceCargoConfig_(cargoCatalog, record["Cargo/Fun\u00e7\u00e3o"] || record["Cargo/Funcao"]);
@@ -1059,9 +1237,7 @@ function members_refreshGovernanceEligibilityPanel() {
   var boardsById = members_indexGovernanceBoardsById_(boards);
   var semesterWindows = members_readGovernanceSemesterWindows_();
   var cargoCatalog = members_readGovernanceCargoCatalog_();
-  var boardMembers = members_readRecordsByKey_(SETTINGS.vigenciaKeys.membrosDiretoria, {
-    skipBlankRows: true
-  });
+  var governanceRecords = members_readGovernanceRecordsByDestinations_();
   var headers = currentSheet.getRange(1, 1, 1, currentSheet.getLastColumn()).getValues()[0].map(function(item) {
     return String(item || "").trim();
   });
@@ -1074,7 +1250,7 @@ function members_refreshGovernanceEligibilityPanel() {
     var rga = String(members_getCurrentField_(record, "rga") || "").trim();
     if (!rowNumber || !rga) return;
 
-    var panel = members_evaluateGovernanceEligibility_(rga, targetBoard, boardMembers, cargoCatalog, boardsById, semesterWindows, {
+    var panel = members_evaluateGovernanceEligibility_(rga, targetBoard, governanceRecords, cargoCatalog, boardsById, semesterWindows, {
       consumptionReferenceDate: new Date()
     });
     var writes = [
@@ -1216,6 +1392,11 @@ function members_isGovernanceCargoOccupied_(boardId, cargo, boardMembers, boards
   return (boardMembers || []).some(function(record) {
     var recordBoardId = String(record["ID_Diretoria"] || "").trim();
     if (recordBoardId !== String(boardId || "").trim()) return false;
+    if (record.__governanceDestination && cargo.destinoVigencia) {
+      if (members_normalizeGovernanceText_(record.__governanceDestination) !== members_normalizeGovernanceText_(cargo.destinoVigencia)) {
+        return false;
+      }
+    }
 
     var resolvedCargo = members_resolveGovernanceCargoConfig_(members_readGovernanceCargoCatalog_(), record["Cargo/Fun\u00e7\u00e3o"] || record["Cargo/Funcao"]);
     if (!resolvedCargo) {
@@ -1235,27 +1416,31 @@ function members_isGovernanceCargoOccupied_(boardId, cargo, boardMembers, boards
 }
 
 /**
- * Busca um vinculo equivalente ja gravado em Membros_Diretoria.
+ * Busca um vinculo equivalente ja gravado nas abas oficiais de governanca.
  *
  * @param {Object} params
- * @param {Array<Object>} boardMembers
+ * @param {Array<Object>} governanceRecords
  * @return {?Object}
  */
-function members_findExistingGovernanceBoardMember_(params, boardMembers) {
+function members_findExistingGovernanceBoardMember_(params, governanceRecords) {
   var targetBoardId = String(params.boardId || "").trim();
   var targetCargo = members_normalizeGovernanceText_(params.roleName);
   var targetRga = members_onlyDigitsCompat_(params.rga);
   var targetStart = members_toGovernanceDate_(params.startDate);
+  var targetDestination = members_normalizeGovernanceText_(params.destination);
 
-  for (var i = 0; i < (boardMembers || []).length; i++) {
-    var record = boardMembers[i] || {};
+  for (var i = 0; i < (governanceRecords || []).length; i++) {
+    var record = governanceRecords[i] || {};
     var sameBoard = String(record["ID_Diretoria"] || "").trim() === targetBoardId;
     var sameCargo = members_normalizeGovernanceText_(record["Cargo/Fun\u00e7\u00e3o"] || record["Cargo/Funcao"]) === targetCargo;
     var sameRga = members_onlyDigitsCompat_(record["RGA"]) === targetRga;
     var recordStart = members_toGovernanceDate_(record["Data_In\u00edcio"]);
     var sameStart = (!targetStart && !recordStart) || (targetStart && recordStart && targetStart.getTime() === recordStart.getTime());
+    var sameDestination = !targetDestination ||
+      !record.__governanceDestination ||
+      members_normalizeGovernanceText_(record.__governanceDestination) === targetDestination;
 
-    if (sameBoard && sameCargo && sameRga && sameStart) {
+    if (sameBoard && sameCargo && sameRga && sameStart && sameDestination) {
       return record;
     }
   }
@@ -1264,7 +1449,7 @@ function members_findExistingGovernanceBoardMember_(params, boardMembers) {
 }
 
 /**
- * Monta a linha oficial de um vinculo em Membros_Diretoria ou Conselheiros.
+ * Monta a linha oficial de um vinculo em uma das abas oficiais de governanca.
  *
  * @param {string[]} headers
  * @param {Object} payload
@@ -1289,6 +1474,38 @@ function members_buildGovernanceOfficialRow_(headers, payload) {
   members_setRowValueIfHeaderExists_(row, idx, "Data_Fim_previsto", payload.endDatePredicted || "");
 
   return row;
+}
+
+/**
+ * Grava um vinculo oficial na aba correspondente ao destino configurado do cargo.
+ *
+ * @param {Object} payload
+ * @param {Object} cargo
+ * @return {Object}
+ */
+function members_appendGovernanceOfficialRecord_(payload, cargo) {
+  var destination = cargo && cargo.destinoVigencia
+    ? cargo.destinoVigencia
+    : SETTINGS.governance.values.destinationDiretoria;
+  var sheetKey = members_getGovernanceDestinationSheetKey_(destination);
+  var sheet = members_sheetByKey_(sheetKey);
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(function(item) {
+    return String(item || "").trim();
+  });
+
+  sheet.getRange(sheet.getLastRow() + 1, 1, 1, headers.length)
+    .setValues([members_buildGovernanceOfficialRow_(headers, payload)]);
+
+  return members_tagGovernanceRecordDestination_({
+    "Nome": payload.name,
+    "RGA": payload.rga,
+    "E-mail": payload.email,
+    "Cargo/Fun\u00e7\u00e3o": payload.roleName,
+    "ID_Diretoria": payload.boardId,
+    "Data_In\u00edcio": payload.startDate,
+    "Data_Fim": payload.endDate,
+    "Data_Fim_previsto": payload.endDatePredicted
+  }, destination);
 }
 
 /**
@@ -1492,9 +1709,11 @@ function members_processDirectorNominations() {
     var boardsById = members_indexGovernanceBoardsById_(boards);
     var semesterWindows = members_readGovernanceSemesterWindows_();
     var cargoCatalog = members_readGovernanceCargoCatalog_();
-    var boardMembers = members_readRecordsByKey_(SETTINGS.vigenciaKeys.membrosDiretoria, {
-      skipBlankRows: true
-    });
+    var governanceRecords = members_readGovernanceRecordsByDestinations_([
+      SETTINGS.governance.values.destinationDiretoria,
+      SETTINGS.governance.values.destinationAssessoria,
+      SETTINGS.governance.values.destinationConselho
+    ]);
     var currentMembersByRga = members_indexGovernanceCurrentMembersByRga_();
     var summary = {
       ok: true,
@@ -1521,7 +1740,7 @@ function members_processDirectorNominations() {
         boardsById: boardsById,
         semesterWindows: semesterWindows,
         cargoCatalog: cargoCatalog,
-        boardMembers: boardMembers,
+        boardMembers: governanceRecords,
         currentMembersByRga: currentMembersByRga
       });
 
@@ -1532,7 +1751,7 @@ function members_processDirectorNominations() {
       );
 
       if (outcome.appendedRecord) {
-        boardMembers.push(outcome.appendedRecord);
+        governanceRecords.push(outcome.appendedRecord);
       }
 
       summary.processed += 1;
@@ -1580,12 +1799,6 @@ function members_processSingleDirectorNominationResponse_(record, ctx) {
   } else if (!cargo.ativo || !cargo.permitirViaForm) {
     reason = "Cargo nao permitido para nomeacao automatica via formulario.";
     members_logGovernanceEvent_("NOM_CARGO_NOT_ALLOWED", { boardId: boardWindow.id, roleName: cargo.nomePublico, rga: rga });
-  } else if (
-    members_normalizeGovernanceText_(cargo.grupoCargo) !== members_normalizeGovernanceText_(SETTINGS.governance.values.cargoGrupoDiretoria) &&
-    members_normalizeGovernanceText_(cargo.grupoCargo) !== members_normalizeGovernanceText_(SETTINGS.governance.values.cargoGrupoAssessoria)
-  ) {
-    reason = "Cargo fora dos grupos operacionais permitidos para este fluxo de composicao.";
-    members_logGovernanceEvent_("NOM_CARGO_GROUP_NOT_ALLOWED", { boardId: boardWindow.id, roleName: cargo.nomePublico, rga: rga });
   } else if (cargo.exigirHomologacaoPrevia) {
     reason = "Cargo depende de homologacao previa e nao pode ser nomeado automaticamente por este fluxo.";
     members_logGovernanceEvent_("NOM_CARGO_NEEDS_APPROVAL", { boardId: boardWindow.id, roleName: cargo.nomePublico, rga: rga });
@@ -1643,7 +1856,8 @@ function members_processSingleDirectorNominationResponse_(record, ctx) {
         boardId: boardWindow.id,
         roleName: cargo.nomePublico,
         rga: rga,
-        startDate: boardWindow.start
+        startDate: boardWindow.start,
+        destination: cargo.destinoVigencia
       }, ctx.boardMembers);
 
       if (existing) {
@@ -1651,10 +1865,6 @@ function members_processSingleDirectorNominationResponse_(record, ctx) {
         reason = "Nomeacao equivalente ja estava registrada anteriormente.";
         members_logGovernanceEvent_("NOM_ALREADY_REGISTERED", { boardId: boardWindow.id, roleName: cargo.nomePublico, rga: rga });
       } else {
-        var diretoriaSheet = members_sheetByKey_(SETTINGS.vigenciaKeys.membrosDiretoria);
-        var dirHeaders = diretoriaSheet.getRange(1, 1, 1, diretoriaSheet.getLastColumn()).getValues()[0].map(function(item) {
-          return String(item || "").trim();
-        });
         var payload = {
           name: members_getCurrentField_(member, "name") || "",
           rga: rga,
@@ -1666,20 +1876,8 @@ function members_processSingleDirectorNominationResponse_(record, ctx) {
           endDatePredicted: status === SETTINGS.governance.states.aptoComLimite ? limitDate : boardWindow.end
         };
 
-        diretoriaSheet.getRange(diretoriaSheet.getLastRow() + 1, 1, 1, dirHeaders.length)
-          .setValues([members_buildGovernanceOfficialRow_(dirHeaders, payload)]);
-
         registeredNow = true;
-        appendedRecord = {
-          "Nome": payload.name,
-          "RGA": payload.rga,
-          "E-mail": payload.email,
-          "Cargo/Fun\u00e7\u00e3o": payload.roleName,
-          "ID_Diretoria": payload.boardId,
-          "Data_In\u00edcio": payload.startDate,
-          "Data_Fim": payload.endDate,
-          "Data_Fim_previsto": payload.endDatePredicted
-        };
+        appendedRecord = members_appendGovernanceOfficialRecord_(payload, cargo);
 
         reason = status === SETTINGS.governance.states.aptoComLimite
           ? "Nomeacao registrada com data limite temporal."
@@ -1851,26 +2049,22 @@ function members_getGovernanceAvailableNominationCargoChoices_(boardWindow) {
   var boards = members_readGovernanceBoardWindows_();
   var targetBoard = boardWindow || members_getGovernanceTargetBoard_(boards);
   var boardsById = members_indexGovernanceBoardsById_(boards);
-  var boardMembers = members_readRecordsByKey_(SETTINGS.vigenciaKeys.membrosDiretoria, {
-    skipBlankRows: true
-  });
+  var governanceRecords = members_readGovernanceRecordsByDestinations_([
+    SETTINGS.governance.values.destinationDiretoria,
+    SETTINGS.governance.values.destinationAssessoria,
+    SETTINGS.governance.values.destinationConselho
+  ]);
   var occupancyReferenceDate = members_getGovernanceOccupancyReferenceDate_(targetBoard);
 
   return cargoCatalog.items
     .filter(function(item) {
       if (!item.ativo || !item.permitirViaForm) return false;
 
-      var normalizedGroup = members_normalizeGovernanceText_(item.grupoCargo);
-      if (normalizedGroup !== members_normalizeGovernanceText_(SETTINGS.governance.values.cargoGrupoDiretoria) &&
-          normalizedGroup !== members_normalizeGovernanceText_(SETTINGS.governance.values.cargoGrupoAssessoria)) {
-        return false;
-      }
-
       if (item.exigirHomologacaoPrevia) return false;
       if (!item.cargoUnico) return true;
 
       return targetBoard
-        ? !members_isGovernanceCargoOccupied_(targetBoard.id, item, boardMembers, boardsById, occupancyReferenceDate)
+        ? !members_isGovernanceCargoOccupied_(targetBoard.id, item, governanceRecords, boardsById, occupancyReferenceDate)
         : true;
     })
     .sort(function(a, b) {
@@ -2145,21 +2339,26 @@ function members_buildGovernanceCouncilorInviteKey_(record, effectiveEnd) {
 }
 
 /**
- * Identifica membros de diretoria que estao proximos do fim e ainda nao foram convidados.
+ * Identifica diretores que estao proximos do fim e ainda nao foram convidados.
  *
  * @return {Array<Object>}
  */
 function members_findGovernanceOutgoingDirectors_() {
   var boards = members_readGovernanceBoardWindows_();
   var boardsById = members_indexGovernanceBoardsById_(boards);
-  var boardMembers = members_readRecordsByKey_(SETTINGS.vigenciaKeys.membrosDiretoria, {
-    skipBlankRows: true
-  });
+  var directorRecords = members_readGovernanceRecordsByDestinations_([
+    SETTINGS.governance.values.destinationDiretoria
+  ]);
+  var allGovernanceRecords = members_readGovernanceRecordsByDestinations_([
+    SETTINGS.governance.values.destinationDiretoria,
+    SETTINGS.governance.values.destinationAssessoria,
+    SETTINGS.governance.values.destinationConselho
+  ]);
   var today = members_toGovernanceDate_(new Date());
   var maxDate = members_addGovernanceDays_(today, SETTINGS.governance.limits.councilorInvitationLeadDays);
   var cargoCatalog = members_readGovernanceCargoCatalog_();
 
-  return boardMembers.filter(function(record) {
+  return directorRecords.filter(function(record) {
     var cargo = members_resolveGovernanceCargoConfig_(cargoCatalog, record["Cargo/Fun\u00e7\u00e3o"] || record["Cargo/Funcao"]);
     if (!cargo) return false;
     if (members_normalizeGovernanceText_(cargo.nomePublico) === members_normalizeGovernanceText_(SETTINGS.governance.values.cargoConselheiroNome)) {
@@ -2168,6 +2367,22 @@ function members_findGovernanceOutgoingDirectors_() {
 
     var interval = members_getGovernanceEffectiveInterval_(record, boardsById);
     if (!interval) return false;
+    var minimumEndDate = members_addGovernanceDays_(
+      members_addGovernanceMonths_(interval.start, SETTINGS.governance.limits.councilorMinimumRoleMonths),
+      -1
+    );
+    if (!minimumEndDate || interval.end.getTime() < minimumEndDate.getTime()) {
+      return false;
+    }
+
+    var nextBoard = members_getGovernanceNextBoard_(boards, members_addGovernanceDays_(interval.end, 1));
+    if (nextBoard) {
+      var isReconducted = allGovernanceRecords.some(function(candidate) {
+        return members_onlyDigitsCompat_(candidate["RGA"]) === members_onlyDigitsCompat_(record["RGA"]) &&
+          String(candidate["ID_Diretoria"] || "").trim() === String(nextBoard.id || "").trim();
+      });
+      if (isReconducted) return false;
+    }
 
     return interval.end.getTime() >= today.getTime() && interval.end.getTime() <= maxDate.getTime();
   }).map(function(record) {
@@ -2188,6 +2403,29 @@ function members_findGovernanceOutgoingDirectors_() {
  * @return {Object}
  */
 function members_buildGovernanceCouncilorInviteOutgoingContract_(ctx) {
+  var blocks = [
+    {
+      title: "Como responder",
+      text: ctx.formUrl
+        ? ("Preencha o formulario oficial de adesao neste link: " + ctx.formUrl)
+        : "Use o formulario oficial de adesao disponibilizado pela diretoria."
+    },
+    {
+      title: "Periodo atual",
+      items: [
+        { label: "Cargo/Fun\u00e7\u00e3o", value: ctx.roleName },
+        { label: "Fim efetivo", value: members_formatGovernanceDate_(ctx.effectiveEnd) }
+      ]
+    }
+  ];
+
+  if (ctx.formUrl) {
+    blocks.push({
+      title: "Link direto",
+      text: ctx.formUrl
+    });
+  }
+
   return {
     moduleName: "MEMBROS",
     templateKey: "GEAPA_CLASSICO",
@@ -2208,21 +2446,7 @@ function members_buildGovernanceCouncilorInviteOutgoingContract_(ctx) {
       title: SETTINGS.governance.email.councilorInviteSubject,
       subtitle: "Transicao institucional do GEAPA",
       introText: "Registramos que o seu vinculo atual na diretoria se aproxima do encerramento e gostar\u00edamos de convidar voc\u00ea para aderir ao corpo de conselheiros consultivos do GEAPA.",
-      blocks: [
-        {
-          title: "Como responder",
-          text: ctx.formUrl
-            ? ("Use o formulario oficial: " + ctx.formUrl)
-            : "Use o formulario oficial de adesao disponibilizado pela diretoria."
-        },
-        {
-          title: "Periodo atual",
-          items: [
-            { label: "Cargo/Fun\u00e7\u00e3o", value: ctx.roleName },
-            { label: "Fim efetivo", value: members_formatGovernanceDate_(ctx.effectiveEnd) }
-          ]
-        }
-      ]
+      blocks: blocks
     },
     priority: "NORMAL",
     sendAfter: "",
@@ -2565,16 +2789,20 @@ function members_buildGovernanceAdministrativeEditors_() {
   var activeBoard = members_getGovernanceActiveBoard_(boards, new Date());
   if (!activeBoard) return [];
 
-  var boardMembers = members_readRecordsByKey_(SETTINGS.vigenciaKeys.membrosDiretoria, {
-    skipBlankRows: true
-  });
+  var today = members_toGovernanceDate_(new Date());
+  var governanceRecords = members_readGovernanceRecordsByDestinations_([
+    SETTINGS.governance.values.destinationDiretoria,
+    SETTINGS.governance.values.destinationAssessoria
+  ]);
   var boardsById = members_indexGovernanceBoardsById_(boards);
 
   return members_uniqueEmailsCompat_(
-    boardMembers.filter(function(record) {
+    governanceRecords.filter(function(record) {
       if (String(record["ID_Diretoria"] || "").trim() !== String(activeBoard.id || "").trim()) return false;
       var interval = members_getGovernanceEffectiveInterval_(record, boardsById);
-      return interval && members_getGovernanceOverlapDays_(interval.start, interval.end, activeBoard.start, activeBoard.end) > 0;
+      return interval &&
+        interval.start.getTime() <= today.getTime() &&
+        interval.end.getTime() >= today.getTime();
     }).map(function(record) {
       return record["E-mail"] || record["Email"] || record["EMAIL"];
     })
@@ -2590,9 +2818,10 @@ function members_buildGovernanceTransitionReaders_() {
   var boards = members_readGovernanceBoardWindows_();
   var targetBoard = members_getGovernanceTargetBoard_(boards);
   var boardsById = members_indexGovernanceBoardsById_(boards);
-  var boardMembers = members_readRecordsByKey_(SETTINGS.vigenciaKeys.membrosDiretoria, {
-    skipBlankRows: true
-  });
+  var governanceRecords = members_readGovernanceRecordsByDestinations_([
+    SETTINGS.governance.values.destinationDiretoria,
+    SETTINGS.governance.values.destinationAssessoria
+  ]);
   var councilors = members_readRecordsByKey_(SETTINGS.vigenciaKeys.conselheiros, {
     skipBlankRows: true
   });
@@ -2600,7 +2829,7 @@ function members_buildGovernanceTransitionReaders_() {
   var emails = [];
 
   if (targetBoard) {
-    boardMembers.forEach(function(record) {
+    governanceRecords.forEach(function(record) {
       if (String(record["ID_Diretoria"] || "").trim() !== String(targetBoard.id || "").trim()) return;
       var interval = members_getGovernanceEffectiveInterval_(record, boardsById);
       if (!interval) return;
