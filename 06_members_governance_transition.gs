@@ -394,6 +394,67 @@ function members_logGovernanceEvent_(eventCode, payload) {
 }
 
 /**
+ * Extrai o dominio de um e-mail normalizado.
+ *
+ * @param {string} email
+ * @return {string}
+ */
+function members_getGovernanceEmailDomain_(email) {
+  var normalized = members_normalizeEmailCompat_(email);
+  var parts = normalized.split("@");
+  return parts.length === 2 ? String(parts[1] || "").trim().toLowerCase() : "";
+}
+
+/**
+ * Indica se um destinatario parece externo ao dominio da conta executora.
+ *
+ * @param {string} email
+ * @return {boolean}
+ */
+function members_isGovernanceLikelyExternalEmail_(email) {
+  var targetDomain = members_getGovernanceEmailDomain_(email);
+  if (!targetDomain) return false;
+
+  try {
+    var actorEmail = Session.getEffectiveUser && Session.getEffectiveUser()
+      ? Session.getEffectiveUser().getEmail()
+      : "";
+    var actorDomain = members_getGovernanceEmailDomain_(actorEmail);
+    return !!actorDomain && actorDomain !== targetDomain;
+  } catch (err) {
+    return false;
+  }
+}
+
+/**
+ * Resume erros de Drive em linguagem operacional para facilitar diagnostico.
+ *
+ * @param {string} email
+ * @param {*} err
+ * @return {Object}
+ */
+function members_describeGovernanceDriveError_(email, err) {
+  var message = err && err.message ? String(err.message) : String(err || "");
+  var lower = message.toLowerCase();
+  var likelyCause = "";
+
+  if (lower.indexOf("access denied") >= 0 || lower.indexOf("permiss") >= 0) {
+    likelyCause = members_isGovernanceLikelyExternalEmail_(email)
+      ? "Possivel bloqueio de compartilhamento externo para este e-mail ou falta de permissao do proprietario da pasta/Drive."
+      : "Possivel falta de permissao da conta executora para compartilhar ou administrar esta pasta.";
+  } else if (lower.indexOf("service error: drive") >= 0) {
+    likelyCause = "Falha do servico do Drive ao consultar ou atualizar permissoes da pasta.";
+  } else if (lower.indexOf("cannot share") >= 0 || lower.indexOf("sharing") >= 0) {
+    likelyCause = "Possivel restricao de compartilhamento configurada na pasta, no Drive compartilhado ou na organizacao.";
+  }
+
+  return {
+    error: message,
+    likelyCause: likelyCause
+  };
+}
+
+/**
  * Normaliza um texto de comparacao no fluxo de governanca.
  *
  * @param {*} value
@@ -2791,13 +2852,44 @@ function members_buildGovernanceAdministrativeEditors_() {
 
   var today = members_toGovernanceDate_(new Date());
   var governanceRecords = members_readGovernanceRecordsByDestinations_([
-    SETTINGS.governance.values.destinationDiretoria,
-    SETTINGS.governance.values.destinationAssessoria
+    SETTINGS.governance.values.destinationDiretoria
   ]);
   var boardsById = members_indexGovernanceBoardsById_(boards);
 
   return members_uniqueEmailsCompat_(
     governanceRecords.filter(function(record) {
+      if (String(record["ID_Diretoria"] || "").trim() !== String(activeBoard.id || "").trim()) return false;
+      var interval = members_getGovernanceEffectiveInterval_(record, boardsById);
+      return interval &&
+        interval.start.getTime() <= today.getTime() &&
+        interval.end.getTime() >= today.getTime();
+    }).map(function(record) {
+      return record["E-mail"] || record["Email"] || record["EMAIL"];
+    })
+  );
+}
+
+/**
+ * Coleta assessores ativos da diretoria vigente para preservar excecoes manuais no Administrativo.
+ *
+ * Regra: assessores nao recebem acesso automatico, mas uma permissao manual nao deve
+ * ser removida pelo sincronizador enquanto o vinculo de assessoria estiver ativo.
+ *
+ * @return {string[]}
+ */
+function members_buildGovernanceAdministrativeManualProtectedEmails_() {
+  var boards = members_readGovernanceBoardWindows_();
+  var activeBoard = members_getGovernanceActiveBoard_(boards, new Date());
+  if (!activeBoard) return [];
+
+  var today = members_toGovernanceDate_(new Date());
+  var assessorRecords = members_readGovernanceRecordsByDestinations_([
+    SETTINGS.governance.values.destinationAssessoria
+  ]);
+  var boardsById = members_indexGovernanceBoardsById_(boards);
+
+  return members_uniqueEmailsCompat_(
+    assessorRecords.filter(function(record) {
       if (String(record["ID_Diretoria"] || "").trim() !== String(activeBoard.id || "").trim()) return false;
       var interval = members_getGovernanceEffectiveInterval_(record, boardsById);
       return interval &&
@@ -2819,8 +2911,7 @@ function members_buildGovernanceTransitionReaders_() {
   var targetBoard = members_getGovernanceTargetBoard_(boards);
   var boardsById = members_indexGovernanceBoardsById_(boards);
   var governanceRecords = members_readGovernanceRecordsByDestinations_([
-    SETTINGS.governance.values.destinationDiretoria,
-    SETTINGS.governance.values.destinationAssessoria
+    SETTINGS.governance.values.destinationDiretoria
   ]);
   var councilors = members_readRecordsByKey_(SETTINGS.vigenciaKeys.conselheiros, {
     skipBlankRows: true
@@ -2851,6 +2942,36 @@ function members_buildGovernanceTransitionReaders_() {
 }
 
 /**
+ * Coleta assessores da diretoria alvo para preservar excecoes manuais na pasta de transicao.
+ *
+ * Regra: assessores nao entram automaticamente na pasta, mas uma concessao manual
+ * feita durante a transicao nao deve ser removida pelo sincronizador enquanto o
+ * vinculo de assessoria daquela diretoria-alvo permanecer relevante.
+ *
+ * @return {string[]}
+ */
+function members_buildGovernanceTransitionManualProtectedEmails_() {
+  var boards = members_readGovernanceBoardWindows_();
+  var targetBoard = members_getGovernanceTargetBoard_(boards);
+  if (!targetBoard) return [];
+
+  var assessorRecords = members_readGovernanceRecordsByDestinations_([
+    SETTINGS.governance.values.destinationAssessoria
+  ]);
+  var boardsById = members_indexGovernanceBoardsById_(boards);
+
+  return members_uniqueEmailsCompat_(
+    assessorRecords.filter(function(record) {
+      if (String(record["ID_Diretoria"] || "").trim() !== String(targetBoard.id || "").trim()) return false;
+      var interval = members_getGovernanceEffectiveInterval_(record, boardsById);
+      return interval && interval.end.getTime() >= targetBoard.start.getTime();
+    }).map(function(record) {
+      return record["E-mail"] || record["Email"] || record["EMAIL"];
+    })
+  );
+}
+
+/**
  * Extrai os emails atuais de uma pasta para uma role especifica.
  *
  * @param {GoogleAppsScript.Drive.Folder} folder
@@ -2858,17 +2979,41 @@ function members_buildGovernanceTransitionReaders_() {
  * @return {string[]}
  */
 function members_listGovernanceFolderEmails_(folder, role) {
-  if (!folder) return [];
-
-  if (role === "editor") {
-    return members_uniqueEmailsCompat_(folder.getEditors().map(function(user) {
-      return user.getEmail();
-    }));
+  if (!folder) {
+    return {
+      ok: true,
+      emails: [],
+      error: "",
+      likelyCause: ""
+    };
   }
 
-  return members_uniqueEmailsCompat_(folder.getViewers().map(function(user) {
-    return user.getEmail();
-  }));
+  try {
+    var emails = role === "editor"
+      ? folder.getEditors().map(function(user) { return user.getEmail(); })
+      : folder.getViewers().map(function(user) { return user.getEmail(); });
+
+    return {
+      ok: true,
+      emails: members_uniqueEmailsCompat_(emails),
+      error: "",
+      likelyCause: ""
+    };
+  } catch (err) {
+    var diagnosis = members_describeGovernanceDriveError_("", err);
+    members_logGovernanceEvent_("DRIVE_ACCESS_LIST_ERROR", {
+      folder: folder.getName(),
+      role: role,
+      error: diagnosis.error,
+      likelyCause: diagnosis.likelyCause
+    });
+    return {
+      ok: false,
+      emails: [],
+      error: diagnosis.error,
+      likelyCause: diagnosis.likelyCause
+    };
+  }
 }
 
 /**
@@ -2881,11 +3026,13 @@ function members_listGovernanceFolderEmails_(folder, role) {
  * @return {Object}
  */
 function members_syncGovernanceFolderRole_(folder, role, desiredEmails, protectedEmails) {
-  var current = members_listGovernanceFolderEmails_(folder, role);
+  var currentRead = members_listGovernanceFolderEmails_(folder, role);
+  var current = currentRead.emails || [];
   var desired = members_uniqueEmailsCompat_(desiredEmails || []);
   var protectedSet = members_uniqueEmailsCompat_(protectedEmails || []);
   var added = [];
   var removed = [];
+  var errors = [];
 
   desired.forEach(function(email) {
     if (current.indexOf(email) >= 0) return;
@@ -2903,11 +3050,19 @@ function members_syncGovernanceFolderRole_(folder, role, desiredEmails, protecte
         email: email
       });
     } catch (err) {
+      var diagnosis = members_describeGovernanceDriveError_(email, err);
       members_logGovernanceEvent_("DRIVE_ACCESS_GRANT_ERROR", {
         folder: folder.getName(),
         role: role,
         email: email,
-        error: err && err.message ? err.message : String(err)
+        error: diagnosis.error,
+        likelyCause: diagnosis.likelyCause
+      });
+      errors.push({
+        action: "grant",
+        email: email,
+        error: diagnosis.error,
+        likelyCause: diagnosis.likelyCause
       });
     }
   });
@@ -2929,18 +3084,30 @@ function members_syncGovernanceFolderRole_(folder, role, desiredEmails, protecte
         email: email
       });
     } catch (err) {
+      var removeDiagnosis = members_describeGovernanceDriveError_(email, err);
       members_logGovernanceEvent_("DRIVE_ACCESS_REMOVE_ERROR", {
         folder: folder.getName(),
         role: role,
         email: email,
-        error: err && err.message ? err.message : String(err)
+        error: removeDiagnosis.error,
+        likelyCause: removeDiagnosis.likelyCause
+      });
+      errors.push({
+        action: "remove",
+        email: email,
+        error: removeDiagnosis.error,
+        likelyCause: removeDiagnosis.likelyCause
       });
     }
   });
 
   return {
+    readOk: currentRead.ok !== false,
+    readError: currentRead.error || "",
+    readLikelyCause: currentRead.likelyCause || "",
     added: added,
-    removed: removed
+    removed: removed,
+    errors: errors
   };
 }
 
@@ -2955,6 +3122,12 @@ function members_syncGovernanceDriveAccess() {
   var administrativo = members_openGovernanceFolderByKey_(SETTINGS.governance.folders.administrativoKey);
   var transicao = members_openGovernanceFolderByKey_(SETTINGS.governance.folders.transicaoKey);
   var protectedEmails = members_collectGovernanceProtectedEmails_();
+  var administrativoProtectedEmails = members_uniqueEmailsCompat_(
+    protectedEmails.concat(members_buildGovernanceAdministrativeManualProtectedEmails_())
+  );
+  var transicaoProtectedEmails = members_uniqueEmailsCompat_(
+    protectedEmails.concat(members_buildGovernanceTransitionManualProtectedEmails_())
+  );
   var summary = {
     ok: true,
     administrativo: null,
@@ -2967,13 +3140,13 @@ function members_syncGovernanceDriveAccess() {
         administrativo,
         "editor",
         members_buildGovernanceAdministrativeEditors_(),
-        protectedEmails
+        administrativoProtectedEmails
       ),
       viewers: members_syncGovernanceFolderRole_(
         administrativo,
         "viewer",
         [],
-        protectedEmails
+        administrativoProtectedEmails
       )
     };
   }
@@ -2984,13 +3157,13 @@ function members_syncGovernanceDriveAccess() {
         transicao,
         "viewer",
         members_buildGovernanceTransitionReaders_(),
-        protectedEmails
+        transicaoProtectedEmails
       ),
       editors: members_syncGovernanceFolderRole_(
         transicao,
         "editor",
         [],
-        protectedEmails
+        transicaoProtectedEmails
       )
     };
   }

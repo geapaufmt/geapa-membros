@@ -85,6 +85,176 @@ function members_buildOffboardingPayloadFromLifecycleEvent_(event) {
   };
 }
 
+/**
+ * Monta um contexto enxuto e resiliente para o e-mail de desligamento por faltas.
+ *
+ * @param {Object} normalizedEvent
+ * @param {Object} payload
+ * @param {Object} currentMatch
+ * @return {Object}
+ */
+function members_buildDismissalByAbsenceNotificationContext_(normalizedEvent, payload, currentMatch) {
+  var match = currentMatch || {};
+  var rowValues = Array.isArray(match.rowValues) ? match.rowValues : [];
+  var headerMap = match.headerMap || {};
+  var nameFromCurrent = String(
+    members_pickValue_(rowValues, headerMap, ["membro", "nome"])
+  ).trim();
+  var emailFromCurrent = members_normalizeEmailCompat_(
+    members_pickValue_(rowValues, headerMap, ["email", "e-mail", "Email"])
+  );
+  var rgaFromCurrent = String(
+    members_pickValue_(rowValues, headerMap, ["rga"])
+  ).trim();
+
+  return {
+    eventId: String(normalizedEvent.eventId || payload.sourceKey || "").trim(),
+    approvedAt: normalizedEvent.eventDate || members_offboardingToDate_(payload.approvedAt),
+    reason: String(payload.reason || normalizedEvent.reason || "").trim(),
+    name: nameFromCurrent || String(payload.memberName || normalizedEvent.memberName || "").trim(),
+    email: emailFromCurrent || members_normalizeEmailCompat_(payload.memberEmail || normalizedEvent.memberEmail || ""),
+    rga: rgaFromCurrent || String(payload.memberRga || normalizedEvent.memberRga || "").trim()
+  };
+}
+
+/**
+ * Monta a correlationKey oficial do e-mail de desligamento por faltas.
+ *
+ * @param {Object} ctx
+ * @return {string}
+ */
+function members_buildDismissalByAbsenceCorrelationKey_(ctx) {
+  members_assertInviteRendererCore_();
+
+  var eventId = String(ctx.eventId || "").trim();
+  var identifier = eventId || members_onlyDigitsCompat_(ctx.rga) || members_slugCorrelationToken_(ctx.email) || "sem-evento";
+
+  return GEAPA_CORE.coreMailBuildCorrelationKey("MEM", {
+    businessId: identifier,
+    flowCode: "DSG",
+    stage: "FALTAS"
+  });
+}
+
+/**
+ * Monta o contrato oficial do e-mail de desligamento por faltas.
+ *
+ * @param {Object} ctx
+ * @return {Object}
+ */
+function members_buildDismissalByAbsenceOutgoingContract_(ctx) {
+  var safeName = String(ctx.name || "").trim() || "membro(a)";
+  var subjectHuman = String(
+    (SETTINGS.offboarding.dismissalByAbsenceEmail && SETTINGS.offboarding.dismissalByAbsenceEmail.subject) ||
+    "Desligamento homologado por limite de faltas no GEAPA"
+  ).trim();
+  var templateKey = String(
+    (SETTINGS.offboarding.dismissalByAbsenceEmail && SETTINGS.offboarding.dismissalByAbsenceEmail.templateKey) ||
+    "GEAPA_CLASSICO"
+  ).trim() || "GEAPA_CLASSICO";
+  var formattedApprovedAt = members_formatLifecycleDate_(ctx.approvedAt);
+  var blocks = [
+    {
+      title: "Situação registrada",
+      items: [
+        { label: "Status final", value: SETTINGS.offboarding.finalStatus },
+        { label: "Data de homologação", value: formattedApprovedAt || "-" },
+        { label: "Motivo", value: String(ctx.reason || "").trim() || "Desligamento por faltas." }
+      ]
+    },
+    {
+      title: "Observação",
+      text: "Este comunicado confirma o processamento do desligamento homologado no fluxo institucional do GEAPA."
+    }
+  ];
+
+  return {
+    moduleName: "MEMBROS",
+    templateKey: templateKey,
+    correlationKey: members_buildDismissalByAbsenceCorrelationKey_(ctx),
+    entityType: "MEMBRO",
+    entityId: String(ctx.rga || ctx.eventId || "").trim(),
+    flowCode: "DSG",
+    stage: "FALTAS",
+    to: ctx.email,
+    cc: "",
+    bcc: "",
+    subjectHuman: subjectHuman,
+    payload: {
+      title: subjectHuman,
+      subtitle: "Desligamento institucional por faltas",
+      introText:
+        "Olá, " + safeName + ".\n\n" +
+        "Informamos que o seu desligamento por limite de faltas foi homologado e processado no sistema do GEAPA.",
+      blocks: blocks,
+      footerNote: ctx.eventId
+        ? ("Evento institucional de referência: " + ctx.eventId + ".")
+        : ""
+    },
+    priority: "NORMAL",
+    sendAfter: "",
+    metadata: {
+      eventId: String(ctx.eventId || "").trim(),
+      rga: String(ctx.rga || "").trim(),
+      email: String(ctx.email || "").trim(),
+      name: String(ctx.name || "").trim(),
+      notificationType: "DISMISSAL_BY_ABSENCE"
+    }
+  };
+}
+
+/**
+ * Enfileira, quando possível, o e-mail de desligamento homologado por faltas.
+ *
+ * @param {Object} ctx
+ * @return {Object}
+ */
+function members_queueDismissalByAbsenceNotification_(ctx) {
+  var email = members_normalizeEmailCompat_(ctx && ctx.email);
+  if (!email) {
+    return { ok: true, queued: false, skipped: true, reason: "invalid_email" };
+  }
+
+  try {
+    members_assertInviteRendererCore_();
+    members_assertLifecycleOutboxCore_();
+  } catch (err) {
+    Logger.log(
+      "members_queueDismissalByAbsenceNotification_ | infraestrutura de email indisponivel: " +
+      (err && err.message ? err.message : err)
+    );
+    return { ok: false, queued: false, skipped: true, reason: "mail_core_unavailable" };
+  }
+
+  try {
+    var queueResult = members_queueEntryFlowOutgoing_(
+      members_buildDismissalByAbsenceOutgoingContract_(Object.assign({}, ctx, { email: email }))
+    ) || {};
+
+    return {
+      ok: true,
+      queued: !!queueResult.queued,
+      duplicate: !!queueResult.duplicate,
+      locked: !!queueResult.locked,
+      skipped: !(queueResult.queued || queueResult.duplicate || queueResult.locked),
+      reason: queueResult.locked ? "mail_queue_locked" : "",
+      saidaId: String(queueResult.saidaId || "").trim()
+    };
+  } catch (err) {
+    Logger.log(
+      "members_queueDismissalByAbsenceNotification_ | erro ao enfileirar: " +
+      (err && err.message ? err.message : err)
+    );
+    return {
+      ok: false,
+      queued: false,
+      skipped: true,
+      reason: "mail_queue_error",
+      error: err && err.message ? err.message : String(err)
+    };
+  }
+}
+
 function members_markDismissalByAbsenceEventProcessed_(eventId, result) {
   var eventInfo = members_findLifecycleEventById_(eventId);
   if (!eventInfo) {
@@ -259,6 +429,9 @@ function members_processSingleApprovedDismissalByAbsenceEvent_(event) {
   }
 
   var offboardResult = members_offboardApprovedImmediateExit(payload);
+  var dismissalNotification = members_queueDismissalByAbsenceNotification_(
+    members_buildDismissalByAbsenceNotificationContext_(normalized, payload, currentMatch)
+  );
   var processedResult = {
     ok: true,
     eventId: eventId,
@@ -267,7 +440,8 @@ function members_processSingleApprovedDismissalByAbsenceEvent_(event) {
     duplicatedHistory: !!offboardResult.duplicatedHistory,
     matchBy: offboardResult.matchBy || "",
     removedCurrentRowNumber: offboardResult.removedCurrentRowNumber || "",
-    note: execution.message
+    note: execution.message,
+    dismissalNotification: dismissalNotification
   };
 
   members_markDismissalByAbsenceEventProcessed_(eventId, processedResult);

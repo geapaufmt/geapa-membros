@@ -1281,12 +1281,14 @@ function members_externalContactsEnsureRowId_(state, rowNumber) {
   var cfg = MEMBERS_EXTERNAL_CONTACTS_CFG.idConfig[state.entityType];
   if (!cfg) return { ok: true, created: false };
 
-  if (members_coreHas_(state.entityType === "professors"
-    ? "coreEnsureProfessorIdForRow"
-    : "coreEnsureExternalIdForRow")) {
-    return state.entityType === "professors"
-      ? GEAPA_CORE.coreEnsureProfessorIdForRow(rowNumber)
-      : GEAPA_CORE.coreEnsureExternalIdForRow(rowNumber);
+  // Para participantes externos, mantemos a geracao local no proprio modulo.
+  // Motivo: o core legado ainda pode estar apontando para a base antiga
+  // PARTICIPANTES_EXTERNOS_BASE, enquanto este importador opera sobre a base
+  // oficial atual PESSOAS_EXTERNAS_BASE. Assim evitamos gerar/verificar IDs na
+  // aba errada e garantimos que o ID fique presente exatamente na planilha
+  // consumida pelo modulo de atividades.
+  if (state.entityType === "professors" && members_coreHas_("coreEnsureProfessorIdForRow")) {
+    return GEAPA_CORE.coreEnsureProfessorIdForRow(rowNumber);
   }
 
   var idHeader = cfg.header;

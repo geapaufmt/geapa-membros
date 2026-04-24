@@ -71,7 +71,11 @@ const SETTINGS = Object.freeze({
     approved: "DEFERIDO",
     yes: "SIM",
     finalStatus: "Desligado",
-    histStatus: "Desligado homologado"
+    histStatus: "Desligado homologado",
+    dismissalByAbsenceEmail: Object.freeze({
+      subject: "Desligamento homologado por limite de faltas no GEAPA",
+      templateKey: "GEAPA_CLASSICO"
+    })
   }),
 
   lifecycle: Object.freeze({
