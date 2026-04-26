@@ -173,6 +173,7 @@ Arquivo principal:
 Fluxo:
 
 - reaproveita `VIGENCIA_DIRETORIAS`, `VIGENCIA_MEMBROS_DIRETORIAS`, `VIGENCIA_ASSESSORES`, `VIGENCIA_SEMESTRES_DIRETORIAS`, `VIGENCIA_CONSELHEIROS` e `CARGOS_INSTITUCIONAIS_CONFIG` via `GEAPA-CORE`;
+- trata `Ocupacao` como termo preferencial nas interfaces novas, mantendo compatibilidade com o cabecalho legado `Cargo/Função` nas abas oficiais;
 - recalcula em `MEMBERS_ATUAIS` o painel de elegibilidade temporal:
 - `QTD_DIAS_QUE_CONTAM_PARA_LIMITE_DIRETORIA`
 - `LIMITE_DIAS_DIRETORIA`
@@ -181,11 +182,15 @@ Fluxo:
 - `DATA_LIMITE_ESTIMADA_DIRETORIA`
 - processa `DIRETORIA_NOMEACOES_RESPONSES` sem reimplementar o fluxo de Presidente e Vice;
 - valida cargo no catalogo oficial, disponibilidade por `ID_Diretoria`, existencia do membro em `MEMBERS_ATUAIS`, compatibilidade entre `RGA` e nome, e elegibilidade temporal;
+- le e escreve a ocupacao com compatibilidade entre `Ocupacao` e `Cargo/Função`, sem renomear ainda os cabecalhos oficiais existentes;
 - usa `CARGOS_INSTITUCIONAIS_CONFIG.DESTINO_VIGENCIA` como fonte oficial para decidir se o vinculo vai para `VIGENCIA_MEMBROS_DIRETORIAS`, `VIGENCIA_ASSESSORES` ou `VIGENCIA_CONSELHEIROS`, com fallback pelo grupo do cargo;
 - registra nomeacoes `APTO` ou `APTO_COM_LIMITE` na aba oficial correspondente ao destino configurado do cargo;
+- aceita no formulario a declaracao `Pretende permanecer ate o final do mandato?` e, quando necessario, `Data prevista de saida`;
+- define `Data_Fim_previsto` pela menor data entre o limite institucional calculado e a data antecipada declarada no formulario;
+- rejeita respostas de nomeacao que informem saida antecipada sem uma data valida ou com data anterior ao inicio do vinculo;
 - enfileira pela `MAIL_SAIDA` a devolutiva automatica da analise de nomeacao;
 - quando a nomeacao e confirmada com registro novo, envia tambem um e-mail direto ao nomeado com o cargo confirmado e eventual limite temporal;
-- sincroniza as opcoes de `DIRETORIA_NOMEACOES_FORM` com base na diretoria alvo e nos cargos vagos permitidos via formulario;
+- sincroniza as opcoes de `DIRETORIA_NOMEACOES_FORM` com base na diretoria alvo e nos cargos vagos permitidos via formulario, e garante as perguntas fixas de permanencia e data prevista de saida;
 - identifica diretores de saida, envia convite para `CONSELHEIROS_ADESAO_FORM` e processa `CONSELHEIROS_ADESAO_RESPONSES`;
 - o convite para conselho considera apenas diretores com pelo menos 3 meses no cargo e que nao estejam reconduzidos para a proxima gestao;
 - registra conselheiros aceitos em `VIGENCIA_CONSELHEIROS`;

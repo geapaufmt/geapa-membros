@@ -14,9 +14,39 @@ const MEMBERS_GOVERNANCE_FORM_ALIASES = Object.freeze({
     submittedAt: Object.freeze(["Carimbo de data/hora", "Timestamp"]),
     submitterEmail: Object.freeze(["Endereco de e-mail", "Endere\u00e7o de e-mail", "Email Address"]),
     boardId: Object.freeze(["ID_Diretoria", "ID Diretoria", "ID da Diretoria"]),
-    roleName: Object.freeze(["Cargo/Fun\u00e7\u00e3o", "Cargo/Funcao", "Cargo/Fun\u00e7ao", "Cargo", "Funcao", "Func\u00e3o"]),
+    roleName: Object.freeze([
+      "Ocupacao",
+      "Ocupa\u00e7\u00e3o",
+      "Ocupacao pretendida",
+      "Ocupa\u00e7\u00e3o pretendida",
+      "Cargo/Fun\u00e7\u00e3o",
+      "Cargo/Funcao",
+      "Cargo/Fun\u00e7ao",
+      "Cargo",
+      "Funcao",
+      "Func\u00e3o"
+    ]),
     rga: Object.freeze(["RGA"]),
-    memberName: Object.freeze(["Nome do indicado", "Nome do Indicado", "Nome para conferencia", "Nome para confer\u00eancia", "Nome"])
+    memberName: Object.freeze(["Nome do indicado", "Nome do Indicado", "Nome para conferencia", "Nome para confer\u00eancia", "Nome"]),
+    stayUntilMandateEnd: Object.freeze([
+      "Pretende permanecer at\u00e9 o final do mandato?",
+      "Pretende permanecer ate o final do mandato?",
+      "Pretende ocupar o cargo at\u00e9 o final do mandato?",
+      "Pretende ocupar o cargo ate o final do mandato?",
+      "Permanecer at\u00e9 o final do mandato?",
+      "Permanecer ate o final do mandato?",
+      "Pretende ficar at\u00e9 o final do mandato?",
+      "Pretende ficar ate o final do mandato?"
+    ]),
+    plannedExitDate: Object.freeze([
+      "Data prevista de sa\u00edda",
+      "Data prevista de saida",
+      "Data pretendida de sa\u00edda",
+      "Data pretendida de saida",
+      "Previs\u00e3o de sa\u00edda",
+      "Previsao de saida",
+      "Quando pretende sair do cargo?"
+    ])
   }),
   councilor: Object.freeze({
     submittedAt: Object.freeze(["Carimbo de data/hora", "Timestamp"]),
@@ -34,9 +64,42 @@ const MEMBERS_GOVERNANCE_FORM_ALIASES = Object.freeze({
   }),
   formItems: Object.freeze({
     boardId: Object.freeze(["ID_Diretoria", "ID Diretoria", "ID da Diretoria", "Diretoria", "Diretoria alvo"]),
-    roleName: Object.freeze(["Cargo/Fun\u00e7\u00e3o", "Cargo/Funcao", "Cargo/Fun\u00e7ao", "Cargo", "Funcao", "Func\u00e3o", "Cargo ou Funcao", "Cargo ou Fun\u00e7\u00e3o"])
+    roleName: Object.freeze([
+      "Ocupacao",
+      "Ocupa\u00e7\u00e3o",
+      "Ocupacao pretendida",
+      "Ocupa\u00e7\u00e3o pretendida",
+      "Cargo/Fun\u00e7\u00e3o",
+      "Cargo/Funcao",
+      "Cargo/Fun\u00e7ao",
+      "Cargo",
+      "Funcao",
+      "Func\u00e3o",
+      "Cargo ou Funcao",
+      "Cargo ou Fun\u00e7\u00e3o"
+    ]),
+    stayUntilMandateEnd: Object.freeze([
+      "Pretende permanecer at\u00e9 o final do mandato?",
+      "Pretende permanecer ate o final do mandato?",
+      "Pretende ocupar o cargo at\u00e9 o final do mandato?",
+      "Pretende ocupar o cargo ate o final do mandato?"
+    ]),
+    plannedExitDate: Object.freeze([
+      "Data prevista de sa\u00edda",
+      "Data prevista de saida",
+      "Data pretendida de sa\u00edda",
+      "Data pretendida de saida"
+    ])
   })
 });
+
+const MEMBERS_GOVERNANCE_OCCUPATION_ALIASES = Object.freeze([
+  "Ocupacao",
+  "Ocupa\u00e7\u00e3o",
+  "Cargo/Fun\u00e7\u00e3o",
+  "Cargo/Funcao",
+  "Cargo/Fun\u00e7ao"
+]);
 
 /**
  * Retorna a lista oficial de colunas derivadas de governanca em MEMBERS_ATUAIS.
@@ -469,6 +532,39 @@ function members_normalizeGovernanceText_(value) {
 }
 
 /**
+ * L\u00ea a ocupacao de um registro com compatibilidade entre o nome novo e o legado.
+ *
+ * @param {Object} record
+ * @return {string}
+ */
+function members_getGovernanceOccupationValue_(record) {
+  return String(members_getRecordValueByAliases_(record || {}, MEMBERS_GOVERNANCE_OCCUPATION_ALIASES) || "").trim();
+}
+
+/**
+ * Escreve a ocupacao em todas as colunas compat\u00edveis presentes na linha alvo.
+ *
+ * @param {Array<*>} row
+ * @param {Object} idx
+ * @param {string} value
+ */
+function members_setGovernanceOccupationValue_(row, idx, value) {
+  MEMBERS_GOVERNANCE_OCCUPATION_ALIASES.forEach(function(headerName) {
+    members_setRowValueIfHeaderExists_(row, idx, headerName, value || "");
+  });
+}
+
+/**
+ * Localiza a coluna de ocupacao em um mapa de cabecalhos com compatibilidade retroativa.
+ *
+ * @param {Object} idx
+ * @return {number}
+ */
+function members_getGovernanceOccupationHeaderIndex_(idx) {
+  return members_findHeaderIndexByAliases_(idx, MEMBERS_GOVERNANCE_OCCUPATION_ALIASES, { notFoundValue: -1 });
+}
+
+/**
  * Tenta interpretar textos de data em formatos comuns das planilhas do GEAPA.
  *
  * @param {*} value
@@ -593,6 +689,74 @@ function members_buildGovernanceTimestampKey_(value) {
 function members_isGovernanceYes_(value) {
   var normalized = members_normalizeGovernanceText_(value);
   return normalized === "sim" || normalized === "s" || normalized === "yes" || normalized === "true";
+}
+
+/**
+ * Interpreta uma flag institucional NAO.
+ *
+ * @param {*} value
+ * @return {boolean}
+ */
+function members_isGovernanceNo_(value) {
+  var normalized = members_normalizeGovernanceText_(value);
+  return normalized === "nao" || normalized === "n" || normalized === "no" || normalized === "false";
+}
+
+/**
+ * Resolve a previsao final de permanencia declarada no formulario de nomeacao.
+ *
+ * @param {Object} boardWindow
+ * @param {*} institutionalEnd
+ * @param {*} stayUntilMandateEndValue
+ * @param {*} plannedExitDateValue
+ * @return {Object}
+ */
+function members_resolveGovernanceNominationPlannedEnd_(boardWindow, institutionalEnd, stayUntilMandateEndValue, plannedExitDateValue) {
+  var maxAllowedEnd = members_toGovernanceDate_(institutionalEnd);
+  var declaredExitDate = members_toGovernanceDate_(plannedExitDateValue);
+  var normalizedStayValue = members_normalizeGovernanceText_(stayUntilMandateEndValue);
+  var declaredEarlyExit = members_isGovernanceNo_(normalizedStayValue) || (!normalizedStayValue && !!declaredExitDate);
+  var result = {
+    valid: true,
+    declaredEarlyExit: declaredEarlyExit,
+    declaredExitDate: declaredExitDate,
+    predictedEndDate: maxAllowedEnd,
+    appliedDeclaredExit: false,
+    note: "",
+    rejectionReason: ""
+  };
+
+  if (!boardWindow || !maxAllowedEnd || !declaredEarlyExit) {
+    return result;
+  }
+
+  if (!declaredExitDate) {
+    result.valid = false;
+    result.rejectionReason = "O formulario indicou saida antes do fim do mandato, mas sem uma data prevista de saida valida.";
+    return result;
+  }
+
+  if (declaredExitDate.getTime() < boardWindow.start.getTime()) {
+    result.valid = false;
+    result.rejectionReason = "A data prevista de saida informada no formulario e anterior ao inicio do vinculo na diretoria.";
+    return result;
+  }
+
+  if (declaredExitDate.getTime() < maxAllowedEnd.getTime()) {
+    result.predictedEndDate = declaredExitDate;
+    result.appliedDeclaredExit = true;
+    result.note = "Nomeacao registrada com saida antecipada informada no formulario.";
+    return result;
+  }
+
+  if (declaredExitDate.getTime() > maxAllowedEnd.getTime()) {
+    result.note = "A data de saida informada no formulario ultrapassa a permanencia maxima permitida pelo sistema, e por isso prevaleceu a data limite institucional.";
+    return result;
+  }
+
+  result.appliedDeclaredExit = true;
+  result.note = "A data de saida informada no formulario coincide com a data maxima ja permitida para o vinculo.";
+  return result;
 }
 
 /**
@@ -1114,7 +1278,7 @@ function members_calculateGovernanceConsumedDays_(rga, governanceRecords, cargoC
   return (governanceRecords || []).reduce(function(total, record) {
     if (members_onlyDigitsCompat_(record["RGA"]) !== targetRga) return total;
 
-    var cargo = members_resolveGovernanceCargoConfig_(cargoCatalog, record["Cargo/Fun\u00e7\u00e3o"] || record["Cargo/Funcao"]);
+    var cargo = members_resolveGovernanceCargoConfig_(cargoCatalog, members_getGovernanceOccupationValue_(record));
     if (!cargo || !cargo.contaParaLimite) return total;
 
     var interval = members_getGovernanceEffectiveInterval_(record, boardsById);
@@ -1459,9 +1623,9 @@ function members_isGovernanceCargoOccupied_(boardId, cargo, boardMembers, boards
       }
     }
 
-    var resolvedCargo = members_resolveGovernanceCargoConfig_(members_readGovernanceCargoCatalog_(), record["Cargo/Fun\u00e7\u00e3o"] || record["Cargo/Funcao"]);
+    var resolvedCargo = members_resolveGovernanceCargoConfig_(members_readGovernanceCargoCatalog_(), members_getGovernanceOccupationValue_(record));
     if (!resolvedCargo) {
-      return members_normalizeGovernanceText_(record["Cargo/Fun\u00e7\u00e3o"] || record["Cargo/Funcao"]) === members_normalizeGovernanceText_(cargo.nomePublico);
+      return members_normalizeGovernanceText_(members_getGovernanceOccupationValue_(record)) === members_normalizeGovernanceText_(cargo.nomePublico);
     }
 
     if (members_normalizeGovernanceText_(resolvedCargo.nomePublico) !== members_normalizeGovernanceText_(cargo.nomePublico)) {
@@ -1493,7 +1657,7 @@ function members_findExistingGovernanceBoardMember_(params, governanceRecords) {
   for (var i = 0; i < (governanceRecords || []).length; i++) {
     var record = governanceRecords[i] || {};
     var sameBoard = String(record["ID_Diretoria"] || "").trim() === targetBoardId;
-    var sameCargo = members_normalizeGovernanceText_(record["Cargo/Fun\u00e7\u00e3o"] || record["Cargo/Funcao"]) === targetCargo;
+    var sameCargo = members_normalizeGovernanceText_(members_getGovernanceOccupationValue_(record)) === targetCargo;
     var sameRga = members_onlyDigitsCompat_(record["RGA"]) === targetRga;
     var recordStart = members_toGovernanceDate_(record["Data_In\u00edcio"]);
     var sameStart = (!targetStart && !recordStart) || (targetStart && recordStart && targetStart.getTime() === recordStart.getTime());
@@ -1526,8 +1690,7 @@ function members_buildGovernanceOfficialRow_(headers, payload) {
   members_setRowValueIfHeaderExists_(row, idx, "E-mail", payload.email || "");
   members_setRowValueIfHeaderExists_(row, idx, "Email", payload.email || "");
   members_setRowValueIfHeaderExists_(row, idx, "EMAIL", payload.email || "");
-  members_setRowValueIfHeaderExists_(row, idx, "Cargo/Fun\u00e7\u00e3o", payload.roleName || "");
-  members_setRowValueIfHeaderExists_(row, idx, "Cargo/Funcao", payload.roleName || "");
+  members_setGovernanceOccupationValue_(row, idx, payload.roleName || "");
   members_setRowValueIfHeaderExists_(row, idx, "ID_Diretoria", payload.boardId || "");
   members_setRowValueIfHeaderExists_(row, idx, "Data_In\u00edcio", payload.startDate || "");
   members_setRowValueIfHeaderExists_(row, idx, "Data_Inicio", payload.startDate || "");
@@ -1561,6 +1724,7 @@ function members_appendGovernanceOfficialRecord_(payload, cargo) {
     "Nome": payload.name,
     "RGA": payload.rga,
     "E-mail": payload.email,
+    "Ocupacao": payload.roleName,
     "Cargo/Fun\u00e7\u00e3o": payload.roleName,
     "ID_Diretoria": payload.boardId,
     "Data_In\u00edcio": payload.startDate,
@@ -1583,7 +1747,7 @@ function members_buildGovernanceBoardContacts_(boardId, boardMembers, currentMem
   (boardMembers || []).forEach(function(record) {
     if (String(record["ID_Diretoria"] || "").trim() !== String(boardId || "").trim()) return;
 
-    var roleClass = members_classifyBoardRole_(record["Cargo/Fun\u00e7\u00e3o"] || record["Cargo/Funcao"]);
+    var roleClass = members_classifyBoardRole_(members_getGovernanceOccupationValue_(record));
     if (roleClass !== "PRESIDENTE" && roleClass !== "VICE") return;
 
     var recordEmail = members_normalizeEmailCompat_(record["E-mail"] || record["Email"] || record["EMAIL"]);
@@ -1606,12 +1770,14 @@ function members_buildGovernanceBoardContacts_(boardId, boardMembers, currentMem
  */
 function members_buildGovernanceNominationOutgoingContract_(ctx) {
   var limitDateText = ctx.limitDate ? members_formatGovernanceDate_(ctx.limitDate) : "";
+  var declaredExitText = ctx.declaredExitDate ? members_formatGovernanceDate_(ctx.declaredExitDate) : "";
+  var predictedEndText = ctx.predictedEndDate ? members_formatGovernanceDate_(ctx.predictedEndDate) : "";
   var blocks = [
     {
       title: "Resultado da analise",
       items: [
         { label: "ID_Diretoria", value: ctx.boardId },
-        { label: "Cargo/Fun\u00e7\u00e3o", value: ctx.roleName },
+        { label: "Ocupacao", value: ctx.roleName },
         { label: "Indicado(a)", value: ctx.memberName + " (" + ctx.rga + ")" },
         { label: "Resultado", value: ctx.status }
       ]
@@ -1622,6 +1788,20 @@ function members_buildGovernanceNominationOutgoingContract_(ctx) {
     blocks.push({
       title: "Limite temporal",
       text: "A permanencia maxima estimada para esta nomeacao vai at\u00e9 " + limitDateText + "."
+    });
+  }
+
+  if (declaredExitText) {
+    blocks.push({
+      title: "Saida antecipada informada",
+      text: "O formulario informou que a permanencia pretendida vai at\u00e9 " + declaredExitText + "."
+    });
+  }
+
+  if (predictedEndText && (declaredExitText || limitDateText)) {
+    blocks.push({
+      title: "Data_Fim_previsto registrada",
+      text: "A previsao atual do vinculo ficou em " + predictedEndText + "."
     });
   }
 
@@ -1674,12 +1854,14 @@ function members_buildGovernanceNominationOutgoingContract_(ctx) {
  */
 function members_buildGovernanceNomineeConfirmedOutgoingContract_(ctx) {
   var limitDateText = ctx.limitDate ? members_formatGovernanceDate_(ctx.limitDate) : "";
+  var declaredExitText = ctx.declaredExitDate ? members_formatGovernanceDate_(ctx.declaredExitDate) : "";
+  var predictedEndText = ctx.predictedEndDate ? members_formatGovernanceDate_(ctx.predictedEndDate) : "";
   var blocks = [
     {
       title: "Nomeacao confirmada",
       items: [
         { label: "ID_Diretoria", value: ctx.boardId },
-        { label: "Cargo/Fun\u00e7\u00e3o", value: ctx.roleName },
+        { label: "Ocupacao", value: ctx.roleName },
         { label: "Resultado", value: ctx.status }
       ]
     }
@@ -1689,6 +1871,20 @@ function members_buildGovernanceNomineeConfirmedOutgoingContract_(ctx) {
     blocks.push({
       title: "Limite temporal",
       text: "Sua permanencia maxima estimada neste cargo vai at\u00e9 " + limitDateText + "."
+    });
+  }
+
+  if (declaredExitText) {
+    blocks.push({
+      title: "Saida antecipada informada",
+      text: "O formulario registrou que sua permanencia pretendida vai at\u00e9 " + declaredExitText + "."
+    });
+  }
+
+  if (predictedEndText && (declaredExitText || limitDateText)) {
+    blocks.push({
+      title: "Data_Fim_previsto registrada",
+      text: "A previsao atual do seu vinculo ficou em " + predictedEndText + "."
     });
   }
 
@@ -1841,6 +2037,8 @@ function members_processSingleDirectorNominationResponse_(record, ctx) {
   var rawRoleName = String(members_getGovernanceFormValue_(record, MEMBERS_GOVERNANCE_FORM_ALIASES.nomination.roleName) || "").trim();
   var rga = members_onlyDigitsCompat_(members_getGovernanceFormValue_(record, MEMBERS_GOVERNANCE_FORM_ALIASES.nomination.rga));
   var informedName = String(members_getGovernanceFormValue_(record, MEMBERS_GOVERNANCE_FORM_ALIASES.nomination.memberName) || "").trim();
+  var stayUntilMandateEndValue = members_getGovernanceFormValue_(record, MEMBERS_GOVERNANCE_FORM_ALIASES.nomination.stayUntilMandateEnd);
+  var plannedExitDateValue = members_getGovernanceFormValue_(record, MEMBERS_GOVERNANCE_FORM_ALIASES.nomination.plannedExitDate);
   var submitterEmail = members_normalizeEmailCompat_(members_getGovernanceFormValue_(record, MEMBERS_GOVERNANCE_FORM_ALIASES.nomination.submitterEmail));
   var boardWindow = members_getGovernanceTargetBoard_(ctx.boards, boardId);
   var cargo = members_resolveGovernanceCargoConfig_(ctx.cargoCatalog, rawRoleName);
@@ -1848,6 +2046,8 @@ function members_processSingleDirectorNominationResponse_(record, ctx) {
   var reason = "";
   var status = SETTINGS.governance.states.inelegivel;
   var limitDate = null;
+  var predictedEndDate = null;
+  var declaredExitDate = null;
   var appendedRecord = null;
   var registeredNow = false;
 
@@ -1926,33 +2126,60 @@ function members_processSingleDirectorNominationResponse_(record, ctx) {
         reason = "Nomeacao equivalente ja estava registrada anteriormente.";
         members_logGovernanceEvent_("NOM_ALREADY_REGISTERED", { boardId: boardWindow.id, roleName: cargo.nomePublico, rga: rga });
       } else {
-        var payload = {
-          name: members_getCurrentField_(member, "name") || "",
-          rga: rga,
-          email: members_normalizeEmailCompat_(members_getCurrentField_(member, "email")),
-          roleName: cargo.nomePublico,
-          boardId: boardWindow.id,
-          startDate: boardWindow.start,
-          endDate: "",
-          endDatePredicted: status === SETTINGS.governance.states.aptoComLimite ? limitDate : boardWindow.end
-        };
+        var maxAllowedEndDate = status === SETTINGS.governance.states.aptoComLimite ? limitDate : boardWindow.end;
+        var plannedEnd = members_resolveGovernanceNominationPlannedEnd_(
+          boardWindow,
+          maxAllowedEndDate,
+          stayUntilMandateEndValue,
+          plannedExitDateValue
+        );
 
-        registeredNow = true;
-        appendedRecord = members_appendGovernanceOfficialRecord_(payload, cargo);
-
-        reason = status === SETTINGS.governance.states.aptoComLimite
-          ? "Nomeacao registrada com data limite temporal."
-          : "Nomeacao registrada integralmente.";
-
-        members_logGovernanceEvent_(
-          status === SETTINGS.governance.states.aptoComLimite ? "NOM_ACCEPTED_LIMITED" : "NOM_ACCEPTED",
-          {
+        if (!plannedEnd.valid) {
+          status = SETTINGS.governance.states.inelegivel;
+          reason = plannedEnd.rejectionReason;
+          declaredExitDate = plannedEnd.declaredExitDate;
+          members_logGovernanceEvent_("NOM_INVALID_PLANNED_EXIT", {
             boardId: boardWindow.id,
             roleName: cargo.nomePublico,
             rga: rga,
-            limitDate: members_formatGovernanceDate_(limitDate)
-          }
-        );
+            declaredExitDate: members_formatGovernanceDate_(plannedEnd.declaredExitDate),
+            error: plannedEnd.rejectionReason
+          });
+        } else {
+          declaredExitDate = plannedEnd.declaredExitDate;
+          predictedEndDate = plannedEnd.predictedEndDate;
+          reason = plannedEnd.note || (
+            status === SETTINGS.governance.states.aptoComLimite
+              ? "Nomeacao registrada com data limite temporal."
+              : "Nomeacao registrada integralmente."
+          );
+
+          var payload = {
+            name: members_getCurrentField_(member, "name") || "",
+            rga: rga,
+            email: members_normalizeEmailCompat_(members_getCurrentField_(member, "email")),
+            roleName: cargo.nomePublico,
+            boardId: boardWindow.id,
+            startDate: boardWindow.start,
+            endDate: "",
+            endDatePredicted: predictedEndDate
+          };
+
+          registeredNow = true;
+          appendedRecord = members_appendGovernanceOfficialRecord_(payload, cargo);
+
+          members_logGovernanceEvent_(
+            status === SETTINGS.governance.states.aptoComLimite ? "NOM_ACCEPTED_LIMITED" : "NOM_ACCEPTED",
+            {
+              boardId: boardWindow.id,
+              roleName: cargo.nomePublico,
+              rga: rga,
+              limitDate: members_formatGovernanceDate_(limitDate),
+              predictedEndDate: members_formatGovernanceDate_(predictedEndDate),
+              declaredExitDate: members_formatGovernanceDate_(declaredExitDate)
+            }
+          );
+        }
       }
     }
   }
@@ -1969,6 +2196,8 @@ function members_processSingleDirectorNominationResponse_(record, ctx) {
       rga: rga,
       status: status,
       limitDate: limitDate,
+      declaredExitDate: declaredExitDate,
+      predictedEndDate: predictedEndDate,
       reason: reason,
       recipients: recipients
     })
@@ -1988,9 +2217,9 @@ function members_processSingleDirectorNominationResponse_(record, ctx) {
           rga: rga,
           status: status,
           limitDate: limitDate,
-          reason: status === SETTINGS.governance.states.aptoComLimite
-            ? "A nomeacao foi confirmada com permanencia parcial, respeitando o limite temporal institucional."
-            : "A nomeacao foi confirmada com permanencia integral para a diretoria informada.",
+          declaredExitDate: declaredExitDate,
+          predictedEndDate: predictedEndDate,
+          reason: reason,
           recipient: nomineeEmail
         })
       );
@@ -2004,6 +2233,8 @@ function members_processSingleDirectorNominationResponse_(record, ctx) {
     status: status,
     reason: reason,
     limitDate: limitDate,
+    declaredExitDate: declaredExitDate,
+    predictedEndDate: predictedEndDate,
     recipients: recipients,
     appendedRecord: appendedRecord,
     registeredNow: registeredNow
@@ -2027,10 +2258,13 @@ function members_syncDirectorNominationFormOptions() {
   var targetBoard = members_getGovernanceTargetBoard_(boards);
   var boardChoices = targetBoard ? [targetBoard.id] : boards.map(function(board) { return board.id; });
   var cargoChoices = members_getGovernanceAvailableNominationCargoChoices_(targetBoard);
+  var stayChoices = ["SIM", "N\u00c3O"];
   var cargoCatalog = members_readGovernanceCargoCatalog_();
   var items = form.getItems();
   var boardItemsAnyType = members_findGovernanceFormItemsByAliasesAnyType_(items, MEMBERS_GOVERNANCE_FORM_ALIASES.formItems.boardId);
   var roleItemsAnyType = members_findGovernanceFormItemsByAliasesAnyType_(items, MEMBERS_GOVERNANCE_FORM_ALIASES.formItems.roleName);
+  var stayItemsAnyType = members_findGovernanceFormItemsByAliasesAnyType_(items, MEMBERS_GOVERNANCE_FORM_ALIASES.formItems.stayUntilMandateEnd);
+  var plannedExitItemsAnyType = members_findGovernanceFormItemsByAliasesAnyType_(items, MEMBERS_GOVERNANCE_FORM_ALIASES.formItems.plannedExitDate);
   var occupancyReferenceDate = members_getGovernanceOccupancyReferenceDate_(targetBoard);
   var boardItems = members_findGovernanceFormItemsForChoices_(items, MEMBERS_GOVERNANCE_FORM_ALIASES.formItems.boardId, {
     targetValues: boardChoices,
@@ -2040,7 +2274,12 @@ function members_syncDirectorNominationFormOptions() {
     targetValues: cargoChoices,
     referenceValues: cargoCatalog.items.map(function(item) { return item.nomePublico; })
   });
+  var stayItems = members_findGovernanceFormItemsForChoices_(items, MEMBERS_GOVERNANCE_FORM_ALIASES.formItems.stayUntilMandateEnd, {
+    targetValues: stayChoices,
+    referenceValues: stayChoices.concat(["NAO"])
+  });
   var updatedItems = [];
+  var createdItems = [];
   var warnings = [];
 
   if (boardItems.length) {
@@ -2068,33 +2307,70 @@ function members_syncDirectorNominationFormOptions() {
       members_describeGovernanceFormItemsInline_(roleItemsAnyType);
   }
 
+  if (stayItems.length) {
+    stayItems.forEach(function(item) {
+      members_applyGovernanceChoicesToItem_(item, stayChoices);
+      updatedItems.push(String(item.getTitle() || "").trim());
+    });
+  } else if (stayItemsAnyType.length) {
+    warnings.push("Item de permanencia encontrado, mas o tipo nao aceita sincronizacao de opcoes: " +
+      members_describeGovernanceFormItemsInline_(stayItemsAnyType));
+  } else {
+    var stayItem = form.addMultipleChoiceItem()
+      .setTitle("Pretende permanecer at\u00e9 o final do mandato?")
+      .setHelpText("Marque N\u00c3O apenas quando a pessoa indicada ja souber que pretende deixar o cargo antes do fim do mandato.")
+      .setRequired(true);
+    stayItem.setChoiceValues(stayChoices);
+    createdItems.push(String(stayItem.getTitle() || "").trim());
+  }
+
+  if (!plannedExitItemsAnyType.length) {
+    var plannedExitItem = form.addDateItem()
+      .setTitle("Data prevista de sa\u00edda")
+      .setHelpText("Preencha somente se a pessoa indicada nao pretende permanecer at\u00e9 o fim do mandato.")
+      .setRequired(false);
+    createdItems.push(String(plannedExitItem.getTitle() || "").trim());
+  }
+
+  items = form.getItems();
+
   members_logGovernanceEvent_("NOMINATION_FORM_SYNC", {
     boardChoices: boardChoices.length,
     roleChoices: cargoChoices.length,
+    stayChoices: stayChoices,
     occupancyReferenceDate: members_formatGovernanceDate_(occupancyReferenceDate),
     totalItems: items.length,
     matchedBoardItemsAnyType: boardItemsAnyType.length,
     matchedRoleItemsAnyType: roleItemsAnyType.length,
+    matchedStayItemsAnyType: stayItemsAnyType.length,
+    matchedPlannedExitItemsAnyType: plannedExitItemsAnyType.length,
     matchedBoardItems: boardItems.length,
     matchedRoleItems: roleItems.length,
+    matchedStayItems: stayItems.length,
     itemsSnapshot: members_buildGovernanceFormItemsSnapshot_(items),
     updatedItems: updatedItems,
+    createdItems: createdItems,
     warnings: warnings
   });
 
   return {
     ok: warnings.length === 0,
-    updated: updatedItems.length > 0,
+    updated: updatedItems.length > 0 || createdItems.length > 0,
     boardChoices: boardChoices,
     roleChoices: cargoChoices,
+    stayChoices: stayChoices,
     occupancyReferenceDate: members_formatGovernanceDate_(occupancyReferenceDate),
     totalItems: items.length,
     matchedBoardItemsAnyType: boardItemsAnyType.length,
     matchedRoleItemsAnyType: roleItemsAnyType.length,
+    matchedStayItemsAnyType: stayItemsAnyType.length,
+    matchedPlannedExitItemsAnyType: plannedExitItemsAnyType.length,
     matchedBoardItems: boardItems.length,
     matchedRoleItems: roleItems.length,
+    matchedStayItems: stayItems.length,
     itemsSnapshot: members_buildGovernanceFormItemsSnapshot_(items),
     updatedItems: updatedItems,
+    createdItems: createdItems,
     warnings: warnings
   };
 }
@@ -2420,7 +2696,7 @@ function members_findGovernanceOutgoingDirectors_() {
   var cargoCatalog = members_readGovernanceCargoCatalog_();
 
   return directorRecords.filter(function(record) {
-    var cargo = members_resolveGovernanceCargoConfig_(cargoCatalog, record["Cargo/Fun\u00e7\u00e3o"] || record["Cargo/Funcao"]);
+    var cargo = members_resolveGovernanceCargoConfig_(cargoCatalog, members_getGovernanceOccupationValue_(record));
     if (!cargo) return false;
     if (members_normalizeGovernanceText_(cargo.nomePublico) === members_normalizeGovernanceText_(SETTINGS.governance.values.cargoConselheiroNome)) {
       return false;
@@ -2474,7 +2750,7 @@ function members_buildGovernanceCouncilorInviteOutgoingContract_(ctx) {
     {
       title: "Periodo atual",
       items: [
-        { label: "Cargo/Fun\u00e7\u00e3o", value: ctx.roleName },
+        { label: "Ocupacao", value: ctx.roleName },
         { label: "Fim efetivo", value: members_formatGovernanceDate_(ctx.effectiveEnd) }
       ]
     }
@@ -2552,7 +2828,7 @@ function members_sendCouncilorInvitationEmails() {
       members_buildGovernanceCouncilorInviteOutgoingContract_({
         rga: item.record["RGA"],
         email: email,
-        roleName: String(item.record["Cargo/Fun\u00e7\u00e3o"] || item.record["Cargo/Funcao"] || "").trim(),
+        roleName: members_getGovernanceOccupationValue_(item.record),
         effectiveEnd: item.effectiveEnd,
         formUrl: members_buildGovernanceFormUrl_(SETTINGS.governance.forms.councilorFormKey)
       })
@@ -2566,7 +2842,7 @@ function members_sendCouncilorInvitationEmails() {
 
     members_logGovernanceEvent_("COUNCILOR_INVITE_SENT", {
       rga: item.record["RGA"],
-      roleName: item.record["Cargo/Fun\u00e7\u00e3o"] || item.record["Cargo/Funcao"],
+      roleName: members_getGovernanceOccupationValue_(item.record),
       effectiveEnd: members_formatGovernanceDate_(item.effectiveEnd)
     });
 
@@ -2648,7 +2924,7 @@ function members_hasEquivalentCouncilorRecord_(payload, records) {
     var sameRga = members_onlyDigitsCompat_(record["RGA"]) === targetRga;
     var recordStart = members_toGovernanceDate_(record["Data_In\u00edcio"]);
     var sameStart = targetStart && recordStart && targetStart.getTime() === recordStart.getTime();
-    var sameRole = members_normalizeGovernanceText_(record["Cargo/Fun\u00e7\u00e3o"] || record["Cargo/Funcao"]) === members_normalizeGovernanceText_(payload.roleName);
+    var sameRole = members_normalizeGovernanceText_(members_getGovernanceOccupationValue_(record)) === members_normalizeGovernanceText_(payload.roleName);
     return sameRga && sameStart && sameRole;
   });
 }
@@ -2773,6 +3049,7 @@ function members_processCouncilorAdhesions() {
           "Nome": payload.name,
           "RGA": payload.rga,
           "E-mail": payload.email,
+          "Ocupacao": payload.roleName,
           "Cargo/Fun\u00e7\u00e3o": payload.roleName,
           "Data_In\u00edcio": payload.startDate,
           "Data_Fim": payload.endDate
