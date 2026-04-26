@@ -634,7 +634,9 @@ function members_normalizeDigits_(value) {
 }
 
 function members_candidateHasBeenSpecificRole_(historyRows, targetRole) {
-  return (historyRows || []).some(r => members_classifyBoardRole_(r["Cargo/Função"]) === targetRole);
+  return (historyRows || []).some(function(r) {
+    return members_classifyBoardRole_(members_getGovernanceOccupationValue_(r)) === targetRole;
+  });
 }
 
 function members_classifyBoardRole_(cargo) {
@@ -1042,7 +1044,9 @@ function members_findExistingBoardRoles_(diretoriaSheet, boardId) {
   const headers = diretoriaSheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || "").trim());
   const idx = members_getGenericHeaderMap_(headers);
   const boardIdIdx = members_getGenericHeaderIndex_(idx, "ID_Diretoria");
-  const roleIdx = members_getGenericHeaderIndex_(idx, "Cargo/Função");
+  const roleIdx = typeof members_getGovernanceOccupationHeaderIndex_ === "function"
+    ? members_getGovernanceOccupationHeaderIndex_(idx)
+    : members_getGenericHeaderIndex_(idx, "Cargo/Função");
   const values = diretoriaSheet.getRange(2, 1, diretoriaSheet.getLastRow() - 1, lastCol).getValues();
 
   if (boardIdIdx < 0 || roleIdx < 0) return out;
@@ -1066,7 +1070,11 @@ function members_buildBoardMemberRow_(headers, member, roleName, boardWindow) {
   members_setRowValueIfHeaderExists_(arr, idx, "Nome", members_getCurrentField_(member, "name") || "");
   members_setRowValueIfHeaderExists_(arr, idx, "RGA", member["RGA"] || "");
   members_setRowValueIfHeaderExists_(arr, idx, "E-mail", members_getCurrentField_(member, "email") || "");
-  members_setRowValueIfHeaderExists_(arr, idx, "Cargo/Função", roleName);
+  if (typeof members_setGovernanceOccupationValue_ === "function") {
+    members_setGovernanceOccupationValue_(arr, idx, roleName);
+  } else {
+    members_setRowValueIfHeaderExists_(arr, idx, "Cargo/Função", roleName);
+  }
   members_setRowValueIfHeaderExists_(arr, idx, "ID_Diretoria", boardWindow.id);
   members_setRowValueIfHeaderExists_(arr, idx, "Data_Início", boardWindow.start);
   members_setRowValueIfHeaderExists_(arr, idx, "Data_Fim", "");
