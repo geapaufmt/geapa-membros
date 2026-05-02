@@ -5,7 +5,26 @@
  * registrados no core.
  ***************************************/
 
-function members_processApprovedDismissalByAbsenceEvents() {
+function members_processApprovedDismissalByAbsenceEvents(eventOrOpts) {
+  return members_runOperationalFlow_(
+    MEMBERS_OPERATIONAL_CONTROL.flows.dismissalByAbsenceEvents,
+    MEMBERS_OPERATIONAL_CONTROL.capabilities.sync,
+    {
+      eventOrOpts: eventOrOpts,
+      executionTypeFallback: MEMBERS_OPERATIONAL_CONTROL.capabilities.trigger
+    },
+    function() {
+      return members_processApprovedDismissalByAbsenceEvents_impl_();
+    }
+  );
+}
+
+/**
+ * Implementacao interna do consumo de eventos homologados de desligamento por faltas.
+ *
+ * @return {Object}
+ */
+function members_processApprovedDismissalByAbsenceEvents_impl_() {
   members_assertCore_();
 
   var events = members_listApprovedDismissalByAbsenceEvents_();
@@ -256,6 +275,22 @@ function members_queueDismissalByAbsenceNotification_(ctx) {
 }
 
 function members_markDismissalByAbsenceEventProcessed_(eventId, result) {
+  var guard = members_shouldSkipOperationalSideEffect_(
+    MEMBERS_OPERATIONAL_CONTROL.capabilities.sync,
+    "members_markDismissalByAbsenceEventProcessed_",
+    {
+      eventId: String(eventId || "").trim()
+    }
+  );
+  if (guard.skip) {
+    return {
+      ok: !guard.blocked,
+      blocked: !!guard.blocked,
+      dryRun: !!guard.dryRun,
+      reason: guard.reason
+    };
+  }
+
   var eventInfo = members_findLifecycleEventById_(eventId);
   if (!eventInfo) {
     throw new Error("Evento de ciclo de vida nao encontrado para marcacao de sucesso: " + eventId);
@@ -274,6 +309,22 @@ function members_markDismissalByAbsenceEventProcessed_(eventId, result) {
 }
 
 function members_markDismissalByAbsenceEventError_(eventId, error) {
+  var guard = members_shouldSkipOperationalSideEffect_(
+    MEMBERS_OPERATIONAL_CONTROL.capabilities.sync,
+    "members_markDismissalByAbsenceEventError_",
+    {
+      eventId: String(eventId || "").trim()
+    }
+  );
+  if (guard.skip) {
+    return {
+      ok: !guard.blocked,
+      blocked: !!guard.blocked,
+      dryRun: !!guard.dryRun,
+      reason: guard.reason
+    };
+  }
+
   var eventInfo = members_findLifecycleEventById_(eventId);
   if (!eventInfo) {
     throw new Error("Evento de ciclo de vida nao encontrado para marcacao de erro: " + eventId);
@@ -424,8 +475,33 @@ function members_processSingleApprovedDismissalByAbsenceEvent_(event) {
       moved: false,
       note: execution.message
     };
+    if (members_isOperationalDryRun_()) {
+      markOnlyResult.dryRun = true;
+      return markOnlyResult;
+    }
     members_markDismissalByAbsenceEventProcessed_(eventId, markOnlyResult);
     return markOnlyResult;
+  }
+
+  if (members_isOperationalDryRun_()) {
+    return {
+      ok: true,
+      dryRun: true,
+      eventId: eventId,
+      action: "processed",
+      moved: false,
+      duplicatedHistory: !!(histMatch && histMatch.found),
+      matchBy: currentMatch && currentMatch.found ? "RGA" : "",
+      removedCurrentRowNumber: "",
+      note: execution.message,
+      dismissalNotification: {
+        ok: true,
+        dryRun: true,
+        queued: false,
+        skipped: true,
+        reason: "DRY_RUN"
+      }
+    };
   }
 
   var offboardResult = members_offboardApprovedImmediateExit(payload);

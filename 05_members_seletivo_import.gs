@@ -237,10 +237,29 @@ function members_buildFutureRowFromInscricao_(insc, processStatus) {
 }
 
 function members_appendObjectByHeaders_(sheet, payload) {
+  const guard = members_shouldSkipOperationalSideEffect_(
+    MEMBERS_OPERATIONAL_CONTROL.capabilities.sync,
+    "members_appendObjectByHeaders_",
+    {
+      sheetName: sheet && typeof sheet.getName === "function" ? sheet.getName() : ""
+    }
+  );
+  if (guard.skip) {
+    return [];
+  }
   return members_appendObjectByHeadersCompat_(sheet, members_adaptPayloadToSheetHeaders_(sheet, payload, "future"));
 }
 
 function members_markAvaliacaoImportada_(rowNumber) {
+  const guard = members_shouldSkipOperationalSideEffect_(
+    MEMBERS_OPERATIONAL_CONTROL.capabilities.sync,
+    "members_markAvaliacaoImportada_",
+    {
+      rowNumber: rowNumber
+    }
+  );
+  if (guard.skip) return false;
+
   const sh = members_sheetByKey_(SETTINGS.seletivo.avaliacaoKey);
   const map = members_getHeaderMap1Based_(sh);
 
@@ -250,10 +269,21 @@ function members_markAvaliacaoImportada_(rowNumber) {
   if (map[SETTINGS.seletivo.processedAtHeader]) {
     sh.getRange(rowNumber, map[SETTINGS.seletivo.processedAtHeader]).setValue(new Date());
   }
+  return true;
 }
 
-function members_importFromSeletivoResults() {
-  return members_importFromSeletivoResults_v2();
+function members_importFromSeletivoResults(eventOrOpts) {
+  return members_runOperationalFlow_(
+    MEMBERS_OPERATIONAL_CONTROL.flows.seletivoImport,
+    MEMBERS_OPERATIONAL_CONTROL.capabilities.sync,
+    {
+      eventOrOpts: eventOrOpts,
+      executionTypeFallback: MEMBERS_OPERATIONAL_CONTROL.capabilities.trigger
+    },
+    function() {
+      return members_importFromSeletivoResults_v2();
+    }
+  );
 }
 function members_findInscricaoByRgaOrEmail_v2_(rga, email) {
   var records = members_readRecordsByKey_(SETTINGS.seletivo.inscricaoKey);
@@ -324,6 +354,7 @@ function members_importFromSeletivoResults_v2() {
   var futureHeaders = futureSheet.getRange(1, 1, 1, futureSheet.getLastColumn()).getValues()[0]
     .map(function(h) { return String(h || '').trim(); });
   var futureIdentityIndex = members_buildFutureIdentityIndex_v2_();
+  var skipWrites = members_isOperationalDryRun_();
 
   pendentes.forEach(function(av) {
     var rga = String(av['RGA'] || '').trim();
@@ -357,16 +388,18 @@ function members_importFromSeletivoResults_v2() {
     }
 
     var payload = members_buildFutureRowFromInscricao_(insc, processStatus);
-    members_appendObjectByHeaders_(futureSheet, payload);
-    members_registerFutureIdentity_v2_(futureIdentityIndex, persistedRga, emailPrincipal);
+    if (!skipWrites) {
+      members_appendObjectByHeaders_(futureSheet, payload);
+      members_registerFutureIdentity_v2_(futureIdentityIndex, persistedRga, emailPrincipal);
 
-    var newRow = futureSheet.getLastRow();
+      var newRow = futureSheet.getLastRow();
 
-    if (processStatus === SETTINGS.values.sendEmail) {
-      members_sendInviteByRow_(futureSheet, newRow, futureHeaders);
+      if (processStatus === SETTINGS.values.sendEmail) {
+        members_sendInviteByRow_(futureSheet, newRow, futureHeaders);
+      }
+
+      members_markAvaliacaoImportada_(av.__rowNumber);
     }
-
-    members_markAvaliacaoImportada_(av.__rowNumber);
 
     Logger.log(
       'V2: importado do seletivo para MEMBERS_FUTURO: ' +

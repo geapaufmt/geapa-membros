@@ -223,8 +223,7 @@ const MEMBERS_SHEET_UX = Object.freeze({
   externalParticipantsNotes: Object.freeze({
     'ID_PARTICIPANTE_EXTERNO': 'Identificador tecnico estavel do cadastro de pessoa externa.',
     'NOME': 'Nome principal usado para identificar a pessoa na base final.',
-    'EMAIL': 'Email principal efetivo para contato. Pode ser o preferencial quando ele for diferente do email do Forms.',
-    'EMAIL_PREFERENCIAL': 'Email preferencial apenas quando for diferente do email usado no envio do formulario.',
+    'EMAIL': 'Email efetivo de contato. Quando a pessoa informar email preferencial, ele passa a ser o email principal salvo na base.',
     'TELEFONE': 'Telefone ou WhatsApp principal, com hyperlink clicavel quando possivel.',
     'INSTAGRAM': 'Perfil de Instagram informado pela pessoa, com link clicavel quando houver.',
     'DATA_NASCIMENTO': 'Data de nascimento normalizada pelo importador. Formato visual sugerido: dd/MM/yyyy.',
@@ -232,17 +231,19 @@ const MEMBERS_SHEET_UX = Object.freeze({
     'INSTITUICAO': 'Empresa, instituicao, orgao, laboratorio ou propriedade vinculada.',
     'CARGO_OU_ATUACAO': 'Cargo, funcao ou area de atuacao principal da pessoa externa.',
     'CURSO_OU_AREA': 'Curso, instituicao, area de formacao, interesse ou atuacao consolidada.',
-    'CATEGORIA_PARTICIPANTE': 'Categoria ou forma de identificacao da pessoa em relacao ao GEAPA.',
     'CATEGORIA_PUBLICO': 'Classifica o publico externo em termos de perfil institucional ou profissional.',
     'RELACAO_COM_GEAPA': 'Indica o tipo de relacao atual ou desejada com o GEAPA.',
     'CIDADE': 'Cidade informada para contato ou referencia.',
     'UF': 'UF informada pela pessoa.',
     'ORIGEM_CONTATO': 'Como a pessoa conheceu o GEAPA.',
     'MOTIVACAO_OU_INTERESSE': 'Motivacao declarada para se aproximar do GEAPA.',
+    'RGA': 'RGA informado quando a pessoa for estudante e desejar se identificar academicamente.',
     'RECEBE_COMUNICADOS_GERAIS': 'Indica se deseja receber comunicados gerais do GEAPA.',
     'RECEBE_REUNIOES_ABERTAS': 'Indica se deseja receber convites para reunioes abertas.',
     'RECEBE_APRESENTACOES_ALUNOS': 'Indica se deseja receber avisos sobre apresentacoes de alunos.',
     'RECEBE_EVENTOS_VISITAS': 'Indica se deseja receber convites para palestras, eventos, visitas e outras atividades.',
+    'AUTORIZA_ARMAZENAMENTO_DADOS': 'Indica se a pessoa autorizou o armazenamento dos dados no cadastro interno.',
+    'AUTORIZA_COMUNICACAO': 'Indica se a pessoa autorizou o recebimento de mensagens e comunicacoes do GEAPA.',
     'INTERESSE_EIXO_I': 'Interesse no eixo tematico I segundo a planilha oficial de eixos.',
     'INTERESSE_EIXO_II': 'Interesse no eixo tematico II segundo a planilha oficial de eixos.',
     'INTERESSE_EIXO_III': 'Interesse no eixo tematico III segundo a planilha oficial de eixos.',
@@ -251,16 +252,17 @@ const MEMBERS_SHEET_UX = Object.freeze({
     'INTERESSE_EIXO_VI': 'Interesse no eixo tematico VI segundo a planilha oficial de eixos.',
     'INTERESSE_EIXO_VII': 'Interesse no eixo tematico VII segundo a planilha oficial de eixos.',
     'INTERESSE_EIXO_VIII': 'Interesse no eixo tematico VIII segundo a planilha oficial de eixos.',
-    'ATIVO': 'Controle cadastral da base final. Valores sugeridos: SIM ou NAO.',
+    'STATUS_CONTATO': 'Status do contato na base final. Valor padrao do importador: ATIVO.',
     'OBSERVACOES': 'Observacoes gerais e bloco tecnico gerenciado pelo importador.',
+    'DATA_CADASTRO_FORM': 'Carimbo de data/hora original da resposta no formulario.',
+    'FORM_ROW': 'Numero da linha original na aba de respostas do formulario.',
     'CRIADO_EM': 'Data e hora em que o registro foi criado na base final.',
     'ATUALIZADO_EM': 'Data e hora da ultima atualizacao do registro na base final.'
   }),
   externalProfessorsNotes: Object.freeze({
     'ID_PROFESSOR': 'Identificador tecnico estavel do cadastro docente.',
     'NOME': 'Nome principal usado para identificar o docente na base final.',
-    'EMAIL': 'Email principal efetivo para contato. Pode ser o preferencial quando ele for diferente do email do Forms.',
-    'EMAIL_PREFERENCIAL': 'Email preferencial apenas quando for diferente do email usado no envio do formulario.',
+    'EMAIL': 'Email efetivo de contato. Quando a pessoa informar email preferencial, ele passa a ser o email principal salvo na base.',
     'TELEFONE': 'Telefone ou WhatsApp principal, com hyperlink clicavel quando possivel.',
     'INSTAGRAM': 'Perfil de Instagram informado pela pessoa, com link clicavel quando houver.',
     'DATA_NASCIMENTO': 'Data de nascimento normalizada pelo importador. Formato visual sugerido: dd/MM/yyyy.',
@@ -285,13 +287,13 @@ const MEMBERS_SHEET_UX = Object.freeze({
     'ATUALIZADO_EM': 'Data e hora da ultima atualizacao do registro na base final.'
   }),
   externalParticipantsGroups: Object.freeze([
-    Object.freeze({ color: '#d9ead3', headers: ['ID_PARTICIPANTE_EXTERNO', 'NOME', 'EMAIL', 'EMAIL_PREFERENCIAL', 'TELEFONE', 'INSTAGRAM', 'DATA_NASCIMENTO', 'SEXO', 'CIDADE', 'UF'] }),
-    Object.freeze({ color: '#d0e0e3', headers: ['INSTITUICAO', 'CARGO_OU_ATUACAO', 'CURSO_OU_AREA', 'CATEGORIA_PARTICIPANTE', 'CATEGORIA_PUBLICO', 'RELACAO_COM_GEAPA', 'ORIGEM_CONTATO', 'MOTIVACAO_OU_INTERESSE', 'INTERESSE_EIXO_I', 'INTERESSE_EIXO_II', 'INTERESSE_EIXO_III', 'INTERESSE_EIXO_IV', 'INTERESSE_EIXO_V', 'INTERESSE_EIXO_VI', 'INTERESSE_EIXO_VII', 'INTERESSE_EIXO_VIII'] }),
-    Object.freeze({ color: '#fff2cc', headers: ['RECEBE_COMUNICADOS_GERAIS', 'RECEBE_REUNIOES_ABERTAS', 'RECEBE_APRESENTACOES_ALUNOS', 'RECEBE_EVENTOS_VISITAS', 'ATIVO'] }),
-    Object.freeze({ color: '#ead1dc', headers: ['OBSERVACOES', 'CRIADO_EM', 'ATUALIZADO_EM'] })
+    Object.freeze({ color: '#d9ead3', headers: ['ID_PARTICIPANTE_EXTERNO', 'NOME', 'EMAIL', 'TELEFONE', 'INSTAGRAM', 'DATA_NASCIMENTO', 'SEXO', 'CIDADE', 'UF'] }),
+    Object.freeze({ color: '#d0e0e3', headers: ['INSTITUICAO', 'CARGO_OU_ATUACAO', 'CURSO_OU_AREA', 'RGA', 'CATEGORIA_PUBLICO', 'RELACAO_COM_GEAPA', 'ORIGEM_CONTATO', 'MOTIVACAO_OU_INTERESSE', 'INTERESSE_EIXO_I', 'INTERESSE_EIXO_II', 'INTERESSE_EIXO_III', 'INTERESSE_EIXO_IV', 'INTERESSE_EIXO_V', 'INTERESSE_EIXO_VI', 'INTERESSE_EIXO_VII', 'INTERESSE_EIXO_VIII'] }),
+    Object.freeze({ color: '#fff2cc', headers: ['RECEBE_COMUNICADOS_GERAIS', 'RECEBE_REUNIOES_ABERTAS', 'RECEBE_APRESENTACOES_ALUNOS', 'RECEBE_EVENTOS_VISITAS', 'AUTORIZA_ARMAZENAMENTO_DADOS', 'AUTORIZA_COMUNICACAO', 'STATUS_CONTATO'] }),
+    Object.freeze({ color: '#ead1dc', headers: ['OBSERVACOES', 'DATA_CADASTRO_FORM', 'FORM_ROW', 'CRIADO_EM', 'ATUALIZADO_EM'] })
   ]),
   externalProfessorsGroups: Object.freeze([
-    Object.freeze({ color: '#d9ead3', headers: ['ID_PROFESSOR', 'NOME', 'EMAIL', 'EMAIL_PREFERENCIAL', 'TELEFONE', 'INSTAGRAM', 'DATA_NASCIMENTO', 'SEXO', 'CIDADE', 'UF'] }),
+    Object.freeze({ color: '#d9ead3', headers: ['ID_PROFESSOR', 'NOME', 'EMAIL', 'TELEFONE', 'INSTAGRAM', 'DATA_NASCIMENTO', 'SEXO', 'CIDADE', 'UF'] }),
     Object.freeze({ color: '#d0e0e3', headers: ['INSTITUICAO', 'VINCULO_DOCENTE', 'DISCIPLINAS', 'TITULACAO', 'FORMACAO', 'EIXO_TEMATICO_1', 'EIXO_TEMATICO_2', 'ORIGEM_CONTATO'] }),
     Object.freeze({ color: '#fff2cc', headers: ['RECEBE_COMUNICADOS_GERAIS', 'RECEBE_REUNIOES_ABERTAS', 'RECEBE_APRESENTACOES_ALUNOS', 'RECEBE_EVENTOS_VISITAS', 'ATIVO'] }),
     Object.freeze({ color: '#ead1dc', headers: ['OBSERVACOES', 'CRIADO_EM', 'ATUALIZADO_EM'] })
@@ -751,6 +753,8 @@ function members_buildExternalParticipantsValidation_() {
     'RECEBE_REUNIOES_ABERTAS': yesNo,
     'RECEBE_APRESENTACOES_ALUNOS': yesNo,
     'RECEBE_EVENTOS_VISITAS': yesNo,
+    'AUTORIZA_ARMAZENAMENTO_DADOS': yesNo,
+    'AUTORIZA_COMUNICACAO': yesNo,
     'INTERESSE_EIXO_I': yesNo,
     'INTERESSE_EIXO_II': yesNo,
     'INTERESSE_EIXO_III': yesNo,
@@ -759,7 +763,11 @@ function members_buildExternalParticipantsValidation_() {
     'INTERESSE_EIXO_VI': yesNo,
     'INTERESSE_EIXO_VII': yesNo,
     'INTERESSE_EIXO_VIII': yesNo,
-    'ATIVO': yesNo
+    'STATUS_CONTATO': {
+      values: ['ATIVO'],
+      allowInvalid: true,
+      helpText: 'Status operacional padrao do cadastro de participante externo.'
+    }
   };
 }
 

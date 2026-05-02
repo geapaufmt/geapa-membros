@@ -19,6 +19,30 @@
  */
 function members_onEditProcessStatus(e) {
   try {
+    return members_runOperationalFlow_(
+      MEMBERS_OPERATIONAL_CONTROL.flows.invites,
+      MEMBERS_OPERATIONAL_CONTROL.capabilities.sync,
+      {
+        eventOrOpts: e,
+        executionTypeFallback: MEMBERS_OPERATIONAL_CONTROL.capabilities.trigger
+      },
+      function() {
+        return members_onEditProcessStatus_impl_(e);
+      }
+    );
+  } catch (err) {
+    console.error("members_onEditProcessStatus erro:", err);
+  }
+}
+
+/**
+ * Implementacao interna do trigger de convite, isolada para reaproveitar o wrapper operacional.
+ *
+ * @param {GoogleAppsScript.Events.SheetsOnEdit} e
+ * @return {*}
+ */
+function members_onEditProcessStatus_impl_(e) {
+  try {
     members_assertCore_();
 
     if (!e || !e.range) return;
@@ -84,9 +108,13 @@ function members_sendInviteByRow_(sheet, rowIndex, headers) {
   };
   const queueContract = members_buildInviteOutgoingContract_(inviteCtx);
   const queueResult = members_queueInviteOutgoing_(queueContract);
+  if (!queueResult || queueResult.dryRun || queueResult.blocked) {
+    return queueResult || null;
+  }
   const outboxRecord = members_getInviteOutboxRecordOrThrow_(queueResult);
 
   members_syncFutureInviteFromOutbox_(sheet, rowIndex, idx, outboxRecord);
+  return queueResult;
 }
 
 function members_assertInviteRendererCore_() {
@@ -236,6 +264,23 @@ function members_buildInviteOutgoingDraft_(ctx) {
 }
 
 function members_queueInviteOutgoing_(contract) {
+  const guard = members_shouldSkipOperationalSideEffect_(
+    MEMBERS_OPERATIONAL_CONTROL.capabilities.email,
+    "members_queueInviteOutgoing_",
+    {
+      to: contract && contract.to ? String(contract.to).trim() : ""
+    }
+  );
+  if (guard.skip) {
+    return {
+      ok: !guard.blocked,
+      blocked: !!guard.blocked,
+      dryRun: !!guard.dryRun,
+      queued: false,
+      reason: guard.reason
+    };
+  }
+
   members_assertInviteOutboxCore_();
 
   const queueResult = GEAPA_CORE.coreMailQueueOutgoing(contract);
@@ -291,6 +336,15 @@ function members_getInviteOutboxRecordOrThrow_(queueResult) {
 }
 
 function members_syncFutureInviteFromOutbox_(sheet, rowIndex, idx, outboxRecord) {
+  const guard = members_shouldSkipOperationalSideEffect_(
+    MEMBERS_OPERATIONAL_CONTROL.capabilities.sync,
+    "members_syncFutureInviteFromOutbox_",
+    {
+      rowIndex: rowIndex
+    }
+  );
+  if (guard.skip) return false;
+
   const sentAt = outboxRecord["Enviado Em"] || new Date();
   const threadId = String(outboxRecord["Id Thread Gmail"] || "").trim();
 
@@ -305,6 +359,8 @@ function members_syncFutureInviteFromOutbox_(sheet, rowIndex, idx, outboxRecord)
   if (idx.threadId >= 0 && threadId) {
     sheet.getRange(rowIndex, idx.threadId + 1).setValue(threadId);
   }
+
+  return true;
 }
 
 /**
