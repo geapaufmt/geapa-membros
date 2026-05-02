@@ -3,8 +3,32 @@
  ***************************************/
 
 function members_offboardApprovedImmediateExit(payload) {
+  if (!members_getOperationalContext_()) {
+    return members_runOperationalFlow_(
+      MEMBERS_OPERATIONAL_CONTROL.flows.offboarding,
+      MEMBERS_OPERATIONAL_CONTROL.capabilities.sync,
+      {
+        executionTypeFallback: "MANUAL"
+      },
+      function() {
+        return members_offboardApprovedImmediateExit(payload);
+      }
+    );
+  }
+
   members_assertCore_();
   members_validateOffboardPayload_(payload);
+
+  if (members_isOperationalDryRun_()) {
+    return {
+      ok: true,
+      dryRun: true,
+      moved: false,
+      duplicatedHistory: false,
+      matchBy: "",
+      removedCurrentRowNumber: ""
+    };
+  }
 
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);

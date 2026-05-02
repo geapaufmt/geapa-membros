@@ -106,21 +106,23 @@ const SETTINGS = Object.freeze({
     yes: "SIM",
     no: "NAO",
     categoryPublicoValues: Object.freeze([
-      "MEMBRO_COMUNIDADE_EXTERNA",
+      "ESTUDANTE_UFMT",
       "ESTUDANTE_EXTERNO",
-      "PROFISSIONAL_EXTERNO",
-      "DOCENTE_EXTERNO",
-      "EGRESSO",
-      "PARCEIRO_INSTITUCIONAL",
+      "DOCENTE",
+      "PROFISSIONAL_TECNICO",
+      "PRODUTOR_RURAL",
+      "EMPRESA_INSTITUICAO",
+      "CONTATO_ACADEMICO",
+      "COMUNIDADE_EXTERNA",
       "OUTRO"
     ]),
     relationGeapaValues: Object.freeze([
-      "PARTICIPANTE_EXTERNO_INTERESSADO",
-      "PALESTRANTE_POTENCIAL",
-      "CONVIDADO_RECURRENTE",
-      "PARCEIRO_INSTITUCIONAL",
+      "INTERESSADO_ATIVIDADES",
+      "PARTICIPANTE_REUNIAO_ABERTA",
+      "CONTATO_ESTRATEGICO",
       "APOIO_EVENTUAL",
-      "SEM_RELACAO_DEFINIDA"
+      "CONVIDADO",
+      "OUTRO"
     ])
   }),
 

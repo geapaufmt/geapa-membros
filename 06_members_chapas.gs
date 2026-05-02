@@ -576,6 +576,10 @@ function members_normalizeChapaHeaderKey_(value) {
 }
 
 function members_writeChapaCellByHeader_(sheet, rowIndex, idx, headerName, value) {
+  if (members_isOperationalDryRun_()) {
+    return false;
+  }
+
   const normalizedHeader = normalizeMembersText_(headerName);
   const directIndex = idx && Object.prototype.hasOwnProperty.call(idx, headerName) ? idx[headerName] : -1;
   const normalizedIndex = idx && Object.prototype.hasOwnProperty.call(idx, normalizedHeader) ? idx[normalizedHeader] : -1;
@@ -1446,9 +1450,12 @@ function members_getSheetHeaders_(sheet) {
 
 function members_ensureChapaHeaders_(sheet, requiredHeaders) {
   const existingHeaders = members_getSheetHeaders_(sheet);
+  const skipWrites = members_isOperationalDryRun_();
 
   if (!existingHeaders.length) {
-    sheet.getRange(1, 1, 1, requiredHeaders.length).setValues([requiredHeaders]);
+    if (!skipWrites) {
+      sheet.getRange(1, 1, 1, requiredHeaders.length).setValues([requiredHeaders]);
+    }
     return requiredHeaders.slice();
   }
 
@@ -1462,11 +1469,13 @@ function members_ensureChapaHeaders_(sheet, requiredHeaders) {
     const normalizedHeader = members_normalizeOffboardingHeader_(header);
     if (!normalizedHeader || normalizedExistingHeaders[normalizedHeader]) return;
     appendAt++;
-    sheet.getRange(1, appendAt).setValue(header);
+    if (!skipWrites) {
+      sheet.getRange(1, appendAt).setValue(header);
+    }
     normalizedExistingHeaders[normalizedHeader] = true;
   });
 
-  return members_getSheetHeaders_(sheet);
+  return skipWrites ? existingHeaders.slice() : members_getSheetHeaders_(sheet);
 }
 
 function members_buildChapaProcessingId_(sourceRow, rawRow, rawIdx) {
@@ -1502,6 +1511,10 @@ function members_buildChapaIdDateSegment_(value) {
 }
 
 function members_syncRawChapasToProcessing_(rawSheet, processingSheet) {
+  if (members_isOperationalDryRun_()) {
+    return;
+  }
+
   if (!rawSheet || !processingSheet || rawSheet.getSheetId() === processingSheet.getSheetId()) {
     return;
   }
@@ -1599,7 +1612,9 @@ function members_setupChapasSheet_() {
 
   members_ensureChapaHeaders_(processingSheet, members_getChapaProcessingHeaders_());
   members_syncRawChapasToProcessing_(rawSheet, processingSheet);
-  members_applyChapasProcessingUxIfAvailable_();
+  if (!members_isOperationalDryRun_()) {
+    members_applyChapasProcessingUxIfAvailable_();
+  }
   return processingSheet;
 }
 
@@ -1648,7 +1663,26 @@ function members_getChapaHeaderIndexMap_(headers) {
   return out;
 }
 
-function members_processPendingChapas() {
+function members_processPendingChapas(eventOrOpts) {
+  return members_runOperationalFlow_(
+    MEMBERS_OPERATIONAL_CONTROL.flows.chapas,
+    MEMBERS_OPERATIONAL_CONTROL.capabilities.sync,
+    {
+      eventOrOpts: eventOrOpts,
+      executionTypeFallback: MEMBERS_OPERATIONAL_CONTROL.capabilities.trigger
+    },
+    function() {
+      return members_processPendingChapas_impl_();
+    }
+  );
+}
+
+/**
+ * Implementacao interna da analise periodica das chapas pendentes.
+ *
+ * @return {void}
+ */
+function members_processPendingChapas_impl_() {
   members_assertCore_();
   const sheet = members_setupChapasSheet_();
   if (!sheet) throw new Error("NÃ£o foi possÃ­vel localizar a planilha de chapas.");
@@ -1705,7 +1739,26 @@ function members_reprocessAllChapas() {
   }
 }
 
-function members_processCancelledChapas() {
+function members_processCancelledChapas(eventOrOpts) {
+  return members_runOperationalFlow_(
+    MEMBERS_OPERATIONAL_CONTROL.flows.chapas,
+    MEMBERS_OPERATIONAL_CONTROL.capabilities.sync,
+    {
+      eventOrOpts: eventOrOpts,
+      executionTypeFallback: MEMBERS_OPERATIONAL_CONTROL.capabilities.trigger
+    },
+    function() {
+      return members_processCancelledChapas_impl_();
+    }
+  );
+}
+
+/**
+ * Implementacao interna do tratamento de chapas canceladas.
+ *
+ * @return {void}
+ */
+function members_processCancelledChapas_impl_() {
   members_assertCore_();
   const chapaSheet = members_setupChapasSheet_();
   if (!chapaSheet) throw new Error("NÃ£o foi possÃ­vel localizar a planilha de chapas.");
@@ -1738,7 +1791,26 @@ function members_processCancelledChapas() {
   }
 }
 
-function members_processElectedChapas() {
+function members_processElectedChapas(eventOrOpts) {
+  return members_runOperationalFlow_(
+    MEMBERS_OPERATIONAL_CONTROL.flows.chapas,
+    MEMBERS_OPERATIONAL_CONTROL.capabilities.sync,
+    {
+      eventOrOpts: eventOrOpts,
+      executionTypeFallback: MEMBERS_OPERATIONAL_CONTROL.capabilities.trigger
+    },
+    function() {
+      return members_processElectedChapas_impl_();
+    }
+  );
+}
+
+/**
+ * Implementacao interna do registro da chapa eleita nas vigencias oficiais.
+ *
+ * @return {void}
+ */
+function members_processElectedChapas_impl_() {
   members_assertCore_();
   const chapaSheet = members_setupChapasSheet_();
   const diretoriaSheet = GEAPA_CORE.coreGetSheetByKey(SETTINGS.vigenciaKeys.membrosDiretoria);
@@ -2022,7 +2094,9 @@ function members_registerElectedChapa_(chapaSheet, rowIndex, headers, ctx) {
     members_buildBoardMemberRow_(dirHeaders, vice, "Vice Presidente", targetBoard)
   ];
 
-  diretoriaSheet.getRange(diretoriaSheet.getLastRow() + 1, 1, rowsToAppend.length, dirHeaders.length).setValues(rowsToAppend);
+  if (!members_isOperationalDryRun_()) {
+    diretoriaSheet.getRange(diretoriaSheet.getLastRow() + 1, 1, rowsToAppend.length, dirHeaders.length).setValues(rowsToAppend);
+  }
   members_writeChapaCellByHeader_(chapaSheet, rowIndex, idx, SETTINGS.election.chapaHeaders.boardRegistered, SETTINGS.election.registeredYes);
 
   const finalResultAt = idx.finalResultAt >= 0 ? row[idx.finalResultAt] : "";
@@ -2052,22 +2126,32 @@ function members_applyChapasProcessingUxIfAvailable_() {
 }
 
 function members_onFormSubmitChapasSync(e) {
-  members_assertCore_();
+  return members_runOperationalFlow_(
+    MEMBERS_OPERATIONAL_CONTROL.flows.chapas,
+    MEMBERS_OPERATIONAL_CONTROL.capabilities.sync,
+    {
+      eventOrOpts: e,
+      executionTypeFallback: MEMBERS_OPERATIONAL_CONTROL.capabilities.trigger
+    },
+    function() {
+      members_assertCore_();
 
-  const processingSheet = members_getChapaProcessingSheet_();
-  if (!processingSheet) return;
+      const processingSheet = members_getChapaProcessingSheet_();
+      if (!processingSheet) return;
 
-  const rawSheet = members_getChapaRawSheet_();
-  if (!rawSheet) return;
+      const rawSheet = members_getChapaRawSheet_();
+      if (!rawSheet) return;
 
-  const eventSheet = e && e.range && typeof e.range.getSheet === "function"
-    ? e.range.getSheet()
-    : null;
+      const eventSheet = e && e.range && typeof e.range.getSheet === "function"
+        ? e.range.getSheet()
+        : null;
 
-  if (!eventSheet || eventSheet.getSheetId() !== rawSheet.getSheetId()) {
-    return;
-  }
+      if (!eventSheet || eventSheet.getSheetId() !== rawSheet.getSheetId()) {
+        return;
+      }
 
-  members_syncRawChapasToProcessing();
-  members_processPendingChapas();
+      members_syncRawChapasToProcessing();
+      return members_processPendingChapas_impl_();
+    }
+  );
 }

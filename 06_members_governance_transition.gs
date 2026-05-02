@@ -382,6 +382,14 @@ function members_hasGovernanceProcessingState_(prefix, token) {
 function members_setGovernanceProcessingState_(prefix, token, value) {
   var key = members_getGovernancePropertyKey_(prefix, token);
   if (!String(token || "").trim()) return;
+  var guard = members_shouldSkipOperationalSideEffect_(
+    MEMBERS_OPERATIONAL_CONTROL.capabilities.sync,
+    "members_setGovernanceProcessingState_",
+    {
+      propertyKey: key
+    }
+  );
+  if (guard.skip) return;
   members_getGovernanceScriptProperties_().setProperty(
     key,
     String(value || new Date().toISOString())
@@ -1447,7 +1455,26 @@ function members_indexGovernanceBoardsById_(boards) {
  *
  * @return {Object}
  */
-function members_refreshGovernanceEligibilityPanel() {
+function members_refreshGovernanceEligibilityPanel(eventOrOpts) {
+  return members_runOperationalFlow_(
+    MEMBERS_OPERATIONAL_CONTROL.flows.governance,
+    MEMBERS_OPERATIONAL_CONTROL.capabilities.sync,
+    {
+      eventOrOpts: eventOrOpts,
+      executionTypeFallback: MEMBERS_OPERATIONAL_CONTROL.capabilities.trigger
+    },
+    function() {
+      return members_refreshGovernanceEligibilityPanel_impl_();
+    }
+  );
+}
+
+/**
+ * Implementacao interna do recalculo do painel de elegibilidade em MEMBERS_ATUAIS.
+ *
+ * @return {Object}
+ */
+function members_refreshGovernanceEligibilityPanel_impl_() {
   members_assertCore_();
 
   var currentSheet = members_sheetByKey_(SETTINGS.currentKey);
@@ -1469,6 +1496,7 @@ function members_refreshGovernanceEligibilityPanel() {
   var map = members_getHeaderMap_(headers);
   var records = members_readSheetRecordsCompat_(currentSheet);
   var updated = 0;
+  var skipWrites = members_isOperationalDryRun_();
 
   records.forEach(function(record) {
     var rowNumber = Number(record.__rowNumber || 0) || 0;
@@ -1488,15 +1516,19 @@ function members_refreshGovernanceEligibilityPanel() {
 
     writes.forEach(function(write) {
       var idx = members_findHeaderIndexByAliases_(map, write.aliases, { notFoundValue: -1 });
-      if (idx < 0) return;
+      if (idx < 0 || skipWrites) return;
       currentSheet.getRange(rowNumber, idx + 1).setValue(write.value);
     });
 
-    updated += 1;
+    if (!skipWrites) {
+      updated += 1;
+    }
   });
 
   try {
+    if (!skipWrites) {
     members_applyCurrentSheetUx_();
+    }
   } catch (err) {}
 
   if (!boards.length || !semesterWindows.length) {
@@ -1511,6 +1543,7 @@ function members_refreshGovernanceEligibilityPanel() {
     ok: true,
     scanned: records.length,
     updated: updated,
+    dryRun: skipWrites,
     boardId: targetBoard ? targetBoard.id : "",
     boardsLoaded: boards.length,
     semesterWindowsLoaded: semesterWindows.length
@@ -1708,6 +1741,31 @@ function members_buildGovernanceOfficialRow_(headers, payload) {
  * @return {Object}
  */
 function members_appendGovernanceOfficialRecord_(payload, cargo) {
+  var guard = members_shouldSkipOperationalSideEffect_(
+    MEMBERS_OPERATIONAL_CONTROL.capabilities.sync,
+    "members_appendGovernanceOfficialRecord_",
+    {
+      boardId: payload && payload.boardId ? String(payload.boardId).trim() : "",
+      roleName: payload && payload.roleName ? String(payload.roleName).trim() : ""
+    }
+  );
+  if (guard.skip) {
+    return members_tagGovernanceRecordDestination_({
+      "Nome": payload.name,
+      "RGA": payload.rga,
+      "E-mail": payload.email,
+      "Ocupacao": payload.roleName,
+      "Cargo/Fun\u00e7\u00e3o": payload.roleName,
+      "ID_Diretoria": payload.boardId,
+      "Data_In\u00edcio": payload.startDate,
+      "Data_Fim": payload.endDate,
+      "Data_Fim_previsto": payload.endDatePredicted,
+      "__dryRun": true
+    }, cargo && cargo.destinoVigencia
+      ? cargo.destinoVigencia
+      : SETTINGS.governance.values.destinationDiretoria);
+  }
+
   var destination = cargo && cargo.destinoVigencia
     ? cargo.destinoVigencia
     : SETTINGS.governance.values.destinationDiretoria;
@@ -1937,6 +1995,23 @@ function members_buildGovernanceNomineeConfirmedOutgoingContract_(ctx) {
  */
 function members_queueGovernanceOutgoing_(contract) {
   if (!contract || !String(contract.to || "").trim()) return null;
+  var guard = members_shouldSkipOperationalSideEffect_(
+    MEMBERS_OPERATIONAL_CONTROL.capabilities.email,
+    "members_queueGovernanceOutgoing_",
+    {
+      to: String(contract.to || "").trim(),
+      stage: String(contract.stage || "").trim()
+    }
+  );
+  if (guard.skip) {
+    return {
+      ok: !guard.blocked,
+      blocked: !!guard.blocked,
+      dryRun: !!guard.dryRun,
+      queued: false,
+      reason: guard.reason
+    };
+  }
   members_assertLifecycleOutboxCore_();
   var queueResult = GEAPA_CORE.coreMailQueueOutgoing(contract);
 
@@ -1952,7 +2027,26 @@ function members_queueGovernanceOutgoing_(contract) {
  *
  * @return {Object}
  */
-function members_processDirectorNominations() {
+function members_processDirectorNominations(eventOrOpts) {
+  return members_runOperationalFlow_(
+    MEMBERS_OPERATIONAL_CONTROL.flows.governance,
+    MEMBERS_OPERATIONAL_CONTROL.capabilities.sync,
+    {
+      eventOrOpts: eventOrOpts,
+      executionTypeFallback: MEMBERS_OPERATIONAL_CONTROL.capabilities.trigger
+    },
+    function() {
+      return members_processDirectorNominations_impl_();
+    }
+  );
+}
+
+/**
+ * Implementacao interna do processamento das respostas de nomeacao da diretoria.
+ *
+ * @return {Object}
+ */
+function members_processDirectorNominations_impl_() {
   members_assertCore_();
 
   var lock = LockService.getScriptLock();
@@ -2246,7 +2340,26 @@ function members_processSingleDirectorNominationResponse_(record, ctx) {
  *
  * @return {Object}
  */
-function members_syncDirectorNominationFormOptions() {
+function members_syncDirectorNominationFormOptions(eventOrOpts) {
+  return members_runOperationalFlow_(
+    MEMBERS_OPERATIONAL_CONTROL.flows.governance,
+    MEMBERS_OPERATIONAL_CONTROL.capabilities.sync,
+    {
+      eventOrOpts: eventOrOpts,
+      executionTypeFallback: MEMBERS_OPERATIONAL_CONTROL.capabilities.trigger
+    },
+    function() {
+      return members_syncDirectorNominationFormOptions_impl_();
+    }
+  );
+}
+
+/**
+ * Implementacao interna da sincronizacao das opcoes do formulario de nomeacoes.
+ *
+ * @return {Object}
+ */
+function members_syncDirectorNominationFormOptions_impl_() {
   members_assertCore_();
 
   var form = members_openGovernanceFormByKey_(SETTINGS.governance.forms.nominationFormKey);
@@ -2281,10 +2394,11 @@ function members_syncDirectorNominationFormOptions() {
   var updatedItems = [];
   var createdItems = [];
   var warnings = [];
+  var skipWrites = members_isOperationalDryRun_();
 
   if (boardItems.length) {
     boardItems.forEach(function(item) {
-      members_applyGovernanceChoicesToItem_(item, boardChoices);
+      if (!skipWrites) members_applyGovernanceChoicesToItem_(item, boardChoices);
       updatedItems.push(String(item.getTitle() || "").trim());
     });
   } else if (boardItemsAnyType.length) {
@@ -2295,7 +2409,7 @@ function members_syncDirectorNominationFormOptions() {
 
   if (roleItems.length) {
     roleItems.forEach(function(item) {
-      members_applyGovernanceChoicesToItem_(item, cargoChoices);
+      if (!skipWrites) members_applyGovernanceChoicesToItem_(item, cargoChoices);
       updatedItems.push(String(item.getTitle() || "").trim());
     });
   } else {
@@ -2309,12 +2423,14 @@ function members_syncDirectorNominationFormOptions() {
 
   if (stayItems.length) {
     stayItems.forEach(function(item) {
-      members_applyGovernanceChoicesToItem_(item, stayChoices);
+      if (!skipWrites) members_applyGovernanceChoicesToItem_(item, stayChoices);
       updatedItems.push(String(item.getTitle() || "").trim());
     });
   } else if (stayItemsAnyType.length) {
     warnings.push("Item de permanencia encontrado, mas o tipo nao aceita sincronizacao de opcoes: " +
       members_describeGovernanceFormItemsInline_(stayItemsAnyType));
+  } else if (skipWrites) {
+    warnings.push("DRY_RUN: item de permanencia seria criado no formulario.");
   } else {
     var stayItem = form.addMultipleChoiceItem()
       .setTitle("Pretende permanecer at\u00e9 o final do mandato?")
@@ -2324,7 +2440,9 @@ function members_syncDirectorNominationFormOptions() {
     createdItems.push(String(stayItem.getTitle() || "").trim());
   }
 
-  if (!plannedExitItemsAnyType.length) {
+  if (!plannedExitItemsAnyType.length && skipWrites) {
+    warnings.push("DRY_RUN: item de data prevista de saida seria criado no formulario.");
+  } else if (!plannedExitItemsAnyType.length) {
     var plannedExitItem = form.addDateItem()
       .setTitle("Data prevista de sa\u00edda")
       .setHelpText("Preencha somente se a pessoa indicada nao pretende permanecer at\u00e9 o fim do mandato.")
@@ -2355,7 +2473,8 @@ function members_syncDirectorNominationFormOptions() {
 
   return {
     ok: warnings.length === 0,
-    updated: updatedItems.length > 0 || createdItems.length > 0,
+    updated: !skipWrites && (updatedItems.length > 0 || createdItems.length > 0),
+    dryRun: skipWrites,
     boardChoices: boardChoices,
     roleChoices: cargoChoices,
     stayChoices: stayChoices,
@@ -2800,7 +2919,26 @@ function members_buildGovernanceCouncilorInviteOutgoingContract_(ctx) {
  *
  * @return {Object}
  */
-function members_sendCouncilorInvitationEmails() {
+function members_sendCouncilorInvitationEmails(eventOrOpts) {
+  return members_runOperationalFlow_(
+    MEMBERS_OPERATIONAL_CONTROL.flows.councilors,
+    MEMBERS_OPERATIONAL_CONTROL.capabilities.sync,
+    {
+      eventOrOpts: eventOrOpts,
+      executionTypeFallback: MEMBERS_OPERATIONAL_CONTROL.capabilities.trigger
+    },
+    function() {
+      return members_sendCouncilorInvitationEmails_impl_();
+    }
+  );
+}
+
+/**
+ * Implementacao interna do disparo de convites para adesao ao conselho.
+ *
+ * @return {Object}
+ */
+function members_sendCouncilorInvitationEmails_impl_() {
   members_assertCore_();
 
   var outgoing = members_findGovernanceOutgoingDirectors_();
@@ -2824,7 +2962,7 @@ function members_sendCouncilorInvitationEmails() {
       return;
     }
 
-    members_queueGovernanceOutgoing_(
+    var inviteQueue = members_queueGovernanceOutgoing_(
       members_buildGovernanceCouncilorInviteOutgoingContract_({
         rga: item.record["RGA"],
         email: email,
@@ -2833,6 +2971,11 @@ function members_sendCouncilorInvitationEmails() {
         formUrl: members_buildGovernanceFormUrl_(SETTINGS.governance.forms.councilorFormKey)
       })
     );
+
+    if (inviteQueue && (inviteQueue.dryRun || inviteQueue.blocked)) {
+      summary.skipped += 1;
+      return;
+    }
 
     members_setGovernanceProcessingState_(
       SETTINGS.governance.properties.councilorInvitePrefix,
@@ -2954,7 +3097,26 @@ function members_resolveGovernanceCouncilorEndDate_(startDate, boards) {
  *
  * @return {Object}
  */
-function members_processCouncilorAdhesions() {
+function members_processCouncilorAdhesions(eventOrOpts) {
+  return members_runOperationalFlow_(
+    MEMBERS_OPERATIONAL_CONTROL.flows.councilors,
+    MEMBERS_OPERATIONAL_CONTROL.capabilities.sync,
+    {
+      eventOrOpts: eventOrOpts,
+      executionTypeFallback: MEMBERS_OPERATIONAL_CONTROL.capabilities.trigger
+    },
+    function() {
+      return members_processCouncilorAdhesions_impl_();
+    }
+  );
+}
+
+/**
+ * Implementacao interna do processamento das respostas de adesao ao conselho.
+ *
+ * @return {Object}
+ */
+function members_processCouncilorAdhesions_impl_() {
   members_assertCore_();
 
   var lock = LockService.getScriptLock();
@@ -3042,18 +3204,20 @@ function members_processCouncilorAdhesions() {
       };
 
       if (!members_hasEquivalentCouncilorRecord_(payload, currentCouncilors)) {
-        councilorSheet.getRange(councilorSheet.getLastRow() + 1, 1, 1, councilorHeaders.length)
-          .setValues([members_buildGovernanceOfficialRow_(councilorHeaders, payload)]);
+        if (!members_isOperationalDryRun_()) {
+          councilorSheet.getRange(councilorSheet.getLastRow() + 1, 1, 1, councilorHeaders.length)
+            .setValues([members_buildGovernanceOfficialRow_(councilorHeaders, payload)]);
 
-        currentCouncilors.push({
-          "Nome": payload.name,
-          "RGA": payload.rga,
-          "E-mail": payload.email,
-          "Ocupacao": payload.roleName,
-          "Cargo/Fun\u00e7\u00e3o": payload.roleName,
-          "Data_In\u00edcio": payload.startDate,
-          "Data_Fim": payload.endDate
-        });
+          currentCouncilors.push({
+            "Nome": payload.name,
+            "RGA": payload.rga,
+            "E-mail": payload.email,
+            "Ocupacao": payload.roleName,
+            "Cargo/Fun\u00e7\u00e3o": payload.roleName,
+            "Data_In\u00edcio": payload.startDate,
+            "Data_Fim": payload.endDate
+          });
+        }
       }
 
       members_setGovernanceProcessingState_(
@@ -3310,6 +3474,31 @@ function members_syncGovernanceFolderRole_(folder, role, desiredEmails, protecte
   var added = [];
   var removed = [];
   var errors = [];
+  var guard = members_shouldSkipOperationalSideEffect_(
+    MEMBERS_OPERATIONAL_CONTROL.capabilities.drive,
+    "members_syncGovernanceFolderRole_",
+    {
+      folder: folder && typeof folder.getName === "function" ? folder.getName() : "",
+      role: role
+    }
+  );
+
+  if (guard.skip) {
+    return {
+      readOk: currentRead.ok !== false,
+      readError: currentRead.error || "",
+      readLikelyCause: currentRead.likelyCause || "",
+      added: [],
+      removed: [],
+      errors: [],
+      dryRun: !!guard.dryRun,
+      blocked: !!guard.blocked,
+      wouldAdd: desired.filter(function(email) { return current.indexOf(email) < 0; }),
+      wouldRemove: current.filter(function(email) {
+        return desired.indexOf(email) < 0 && protectedSet.indexOf(email) < 0;
+      })
+    };
+  }
 
   desired.forEach(function(email) {
     if (current.indexOf(email) >= 0) return;
@@ -3393,7 +3582,26 @@ function members_syncGovernanceFolderRole_(folder, role, desiredEmails, protecte
  *
  * @return {Object}
  */
-function members_syncGovernanceDriveAccess() {
+function members_syncGovernanceDriveAccess(eventOrOpts) {
+  return members_runOperationalFlow_(
+    MEMBERS_OPERATIONAL_CONTROL.flows.governanceDriveSync,
+    MEMBERS_OPERATIONAL_CONTROL.capabilities.drive,
+    {
+      eventOrOpts: eventOrOpts,
+      executionTypeFallback: MEMBERS_OPERATIONAL_CONTROL.capabilities.trigger
+    },
+    function() {
+      return members_syncGovernanceDriveAccess_impl_();
+    }
+  );
+}
+
+/**
+ * Implementacao interna da sincronizacao de permissoes das pastas de governanca.
+ *
+ * @return {Object}
+ */
+function members_syncGovernanceDriveAccess_impl_() {
   members_assertCore_();
 
   var administrativo = members_openGovernanceFolderByKey_(SETTINGS.governance.folders.administrativoKey);

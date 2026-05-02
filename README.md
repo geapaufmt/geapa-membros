@@ -407,3 +407,75 @@ Entradas publicas:
 Trigger sugerido no modulo:
 
 - `members_processApprovedDismissalByAbsenceEvents` a cada 15 minutos.
+
+---
+
+## Controle operacional central via GEAPA-CORE
+
+Arquivo principal:
+
+- `00_members_operational_control.gs`
+
+O modulo passou a consumir a camada central de `MODULOS_CONFIG` e `MODULOS_STATUS` do `GEAPA-CORE` antes de executar os principais fluxos automatizados.
+
+Fluxos cobertos:
+
+- `GERAL` como fallback automatico do core
+- `CONVITES_INGRESSO`
+- `ACEITE_RECUSA`
+- `TIMEOUT_CONVITES`
+- `IMPORTACAO_SELETIVO`
+- `OFFBOARDING`
+- `CHAPAS`
+- `GOVERNANCA_TRANSICAO`
+- `CONSELHEIROS`
+- `SYNC_DRIVE_GOVERNANCA`
+- `IMPORTACAO_CONTATOS_EXTERNOS`
+- `DESLIGAMENTO_POR_FALTAS_EVENTOS`
+
+Entry points integrados:
+
+- `members_onEditProcessStatus`
+- `members_processAcceptanceReplies`
+- `members_processInvitationTimeouts`
+- `members_importFromSeletivoResults`
+- `members_offboardApprovedImmediateExit`
+- `members_onFormSubmitChapasSync`
+- `members_processPendingChapas`
+- `members_processCancelledChapas`
+- `members_processElectedChapas`
+- `members_refreshGovernanceEligibilityPanel`
+- `members_syncDirectorNominationFormOptions`
+- `members_processDirectorNominations`
+- `members_sendCouncilorInvitationEmails`
+- `members_processCouncilorAdhesions`
+- `members_syncGovernanceDriveAccess`
+- `members_importExternalContactsFromForm`
+- `members_importNewExternalContactsFromTrigger`
+- `members_processApprovedDismissalByAbsenceEvents`
+
+Tratamento de modos:
+
+- `ON`: executa normalmente.
+- `OFF`: bloqueia o fluxo de forma limpa, com log e registro em `MODULOS_STATUS`.
+- `DRY_RUN`: permite leitura, parsing, validacoes e logs, mas bloqueia efeitos reais como envio de e-mail, integracao definitiva em bases oficiais, offboarding efetivo, gravacao de nomeacoes, gravacao de adesoes ao conselho, marcacao persistente de estados idempotentes e concessao/remocao de acessos no Drive.
+- `MANUAL`: bloqueia execucoes automaticas detectadas como `TRIGGER`; chamadas manuais continuam permitidas quando o contexto consegue ser identificado como manual.
+
+Capabilities praticas usadas:
+
+- `CONVITES_INGRESSO`: `SYNC` no entrypoint, `EMAIL` nos envios.
+- `ACEITE_RECUSA`: `INBOX` no entrypoint, `EMAIL` nos retornos e `SYNC` nas integracoes.
+- `TIMEOUT_CONVITES`: `SYNC` no entrypoint, `EMAIL` nos avisos.
+- `IMPORTACAO_SELETIVO`: `SYNC`.
+- `OFFBOARDING`: `SYNC`.
+- `CHAPAS`: `SYNC` no entrypoint, `EMAIL` nos comunicados.
+- `GOVERNANCA_TRANSICAO`: `SYNC` no entrypoint, `EMAIL` nos retornos e confirmacoes.
+- `CONSELHEIROS`: `SYNC` no entrypoint, `EMAIL` nos convites.
+- `SYNC_DRIVE_GOVERNANCA`: `DRIVE`.
+- `IMPORTACAO_CONTATOS_EXTERNOS`: `SYNC`.
+- `DESLIGAMENTO_POR_FALTAS_EVENTOS`: `SYNC` no entrypoint, `EMAIL` na notificacao ao membro.
+
+Registro operacional em `MODULOS_STATUS`:
+
+- o modulo tenta registrar `ULTIMA_EXECUCAO`, `ULTIMO_SUCESSO`, `ULTIMO_ERRO`, `ULTIMO_BLOQUEIO_CONFIG`, `MOTIVO_ULTIMO_BLOQUEIO`, `ULTIMO_MODO_LIDO` e `ULTIMA_CAPABILITY` via API publica do core;
+- quando o `GEAPA-CORE` ainda nao expuser essa API no ambiente publicado, o modulo continua funcionando com fallback silencioso, sem recriar uma camada paralela local.

@@ -309,6 +309,24 @@ function members_buildEntryFlowCorrelationKey_(ctx, stage) {
 function members_queueEntryFlowOutgoing_(contract) {
   if (!contract || !String(contract.to || "").trim()) return null;
 
+  const guard = members_shouldSkipOperationalSideEffect_(
+    MEMBERS_OPERATIONAL_CONTROL.capabilities.email,
+    "members_queueEntryFlowOutgoing_",
+    {
+      to: String(contract.to || "").trim(),
+      stage: String(contract.stage || "").trim()
+    }
+  );
+  if (guard.skip) {
+    return {
+      ok: !guard.blocked,
+      blocked: !!guard.blocked,
+      dryRun: !!guard.dryRun,
+      queued: false,
+      reason: guard.reason
+    };
+  }
+
   members_assertLifecycleOutboxCore_();
   const queueResult = GEAPA_CORE.coreMailQueueOutgoing(contract);
 
@@ -478,6 +496,23 @@ function buildMembersFinalEmailHtml_(name, whatsappLink) {
 }
 
 function members_markFutureAsRefused_(futureSheet, absoluteRow, futureIdx, messageId, refusalReason) {
+  const guard = members_shouldSkipOperationalSideEffect_(
+    MEMBERS_OPERATIONAL_CONTROL.capabilities.sync,
+    "members_markFutureAsRefused_",
+    {
+      rowNumber: absoluteRow
+    }
+  );
+  if (guard.skip) {
+    return {
+      ok: !guard.blocked,
+      blocked: !!guard.blocked,
+      dryRun: !!guard.dryRun,
+      reason: guard.reason,
+      rowNumber: absoluteRow
+    };
+  }
+
   const now = new Date();
 
   const row = futureSheet.getRange(absoluteRow, 1, 1, futureSheet.getLastColumn()).getValues()[0];
@@ -513,6 +548,12 @@ function members_markFutureAsRefused_(futureSheet, absoluteRow, futureIdx, messa
       members_buildRefusalOutgoingContract_(ctx, refusalReason)
     );
   }
+
+  return {
+    ok: true,
+    rowNumber: absoluteRow,
+    status: SETTINGS.values.refused
+  };
 }
 
 function buildMembersRefusalEmailHtml_(name) {
@@ -614,6 +655,24 @@ function members_integrateAcceptedFutureMember_(futureSheet, currentSheet, absol
 }
 
 function members_processInvitationTimeouts() {
+  return members_runOperationalFlow_(
+    MEMBERS_OPERATIONAL_CONTROL.flows.invitationTimeouts,
+    MEMBERS_OPERATIONAL_CONTROL.capabilities.sync,
+    {
+      executionTypeFallback: MEMBERS_OPERATIONAL_CONTROL.capabilities.trigger
+    },
+    function() {
+      return members_processInvitationTimeouts_impl_();
+    }
+  );
+}
+
+/**
+ * Implementacao interna da expiracao de convites sem resposta.
+ *
+ * @return {void}
+ */
+function members_processInvitationTimeouts_impl_() {
   members_assertCore_();
 
   const futureSheet = GEAPA_CORE.coreGetSheetByKey(SETTINGS.futureKey);
@@ -630,6 +689,7 @@ function members_processInvitationTimeouts() {
   const values = futureSheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
 
   const now = new Date();
+  const skipWrites = members_isOperationalDryRun_();
   const msLimit = SETTINGS.timeoutDays * 24 * 60 * 60 * 1000;
 
   for (let i = 0; i < values.length; i++) {
@@ -658,15 +718,15 @@ function members_processInvitationTimeouts() {
     const elapsed = now.getTime() - sentDate.getTime();
     if (elapsed < msLimit) continue;
 
-    if (idx.status >= 0) {
+    if (!skipWrites && idx.status >= 0) {
       futureSheet.getRange(absoluteRow, idx.status + 1).setValue(SETTINGS.values.disqualified);
     }
 
-    if (idx.processStatus >= 0) {
+    if (!skipWrites && idx.processStatus >= 0) {
       futureSheet.getRange(absoluteRow, idx.processStatus + 1).setValue(SETTINGS.values.expired);
     }
 
-    if (idx.notes >= 0) {
+    if (!skipWrites && idx.notes >= 0) {
       futureSheet.getRange(absoluteRow, idx.notes + 1).setValue(
         `Prazo de ${SETTINGS.timeoutDays} dias expirado sem resposta ao convite.`
       );
@@ -742,6 +802,22 @@ function members_tryGetPendingReplyEventFromMailHub_(threadId, rowEmail, savedMe
 function members_markMailHubEventProcessed_(eventId) {
   if (!eventId || !members_coreHas_("coreMailMarkEventProcessed")) return null;
 
+  const guard = members_shouldSkipOperationalSideEffect_(
+    MEMBERS_OPERATIONAL_CONTROL.capabilities.sync,
+    "members_markMailHubEventProcessed_",
+    {
+      eventId: String(eventId || "").trim()
+    }
+  );
+  if (guard.skip) {
+    return {
+      ok: !guard.blocked,
+      blocked: !!guard.blocked,
+      dryRun: !!guard.dryRun,
+      reason: guard.reason
+    };
+  }
+
   try {
     return GEAPA_CORE.coreMailMarkEventProcessed(
       String(eventId || "").trim(),
@@ -753,6 +829,24 @@ function members_markMailHubEventProcessed_(eventId) {
 }
 
 function members_processAcceptanceReplies() {
+  return members_runOperationalFlow_(
+    MEMBERS_OPERATIONAL_CONTROL.flows.acceptance,
+    MEMBERS_OPERATIONAL_CONTROL.capabilities.inbox,
+    {
+      executionTypeFallback: MEMBERS_OPERATIONAL_CONTROL.capabilities.trigger
+    },
+    function() {
+      return members_processAcceptanceReplies_impl_();
+    }
+  );
+}
+
+/**
+ * Implementacao interna do processamento de respostas ACEITO/RECUSO.
+ *
+ * @return {void}
+ */
+function members_processAcceptanceReplies_impl_() {
   members_assertCore_();
   members_tryIngestMailHubInbox_();
 
@@ -874,6 +968,23 @@ function members_processAcceptanceReplies() {
 }
 
 function members_integrateAcceptedFutureMember_(futureSheet, currentSheet, absoluteRow, futureHeaders, futureIdx, row, rowFormulas, messageId) {
+  const guard = members_shouldSkipOperationalSideEffect_(
+    MEMBERS_OPERATIONAL_CONTROL.capabilities.sync,
+    "members_integrateAcceptedFutureMember_",
+    {
+      rowNumber: absoluteRow
+    }
+  );
+  if (guard.skip) {
+    return {
+      ok: !guard.blocked,
+      blocked: !!guard.blocked,
+      dryRun: !!guard.dryRun,
+      reason: guard.reason,
+      rowNumber: absoluteRow
+    };
+  }
+
   const currentProcessStatus = futureIdx.processStatus >= 0
     ? String(row[futureIdx.processStatus] || "").trim()
     : "";

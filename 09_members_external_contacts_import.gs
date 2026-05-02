@@ -16,7 +16,8 @@
 const MEMBERS_EXTERNAL_CONTACTS_CFG = Object.freeze({
   headerRow: 1,
   registryKeys: Object.freeze({
-    form: "PARTICIPANTES_EXTERNOS_FORM",
+    form: "PESSOAS_EXTERNAS_FORM",
+    formLegacy: "PARTICIPANTES_EXTERNOS_FORM",
     participants: "PESSOAS_EXTERNAS_BASE",
     participantsLegacy: "PARTICIPANTES_EXTERNOS_BASE",
     professors: "PROFS_BASE",
@@ -31,7 +32,8 @@ const MEMBERS_EXTERNAL_CONTACTS_CFG = Object.freeze({
   values: Object.freeze({
     yes: "SIM",
     no: "NAO",
-    active: "SIM"
+    active: "SIM",
+    activeContact: "ATIVO"
   }),
   observationMarker: "IMPORT_FORMULARIO_CONTATOS",
   thematicAxesRequiredHeaders: Object.freeze([
@@ -46,23 +48,26 @@ const MEMBERS_EXTERNAL_CONTACTS_CFG = Object.freeze({
     "ID_PARTICIPANTE_EXTERNO",
     "NOME",
     "EMAIL",
-    "EMAIL_PREFERENCIAL",
     "TELEFONE",
     "INSTAGRAM",
     "DATA_NASCIMENTO",
     "SEXO",
-    "INSTITUICAO",
-    "CARGO_OU_ATUACAO",
-    "CURSO_OU_AREA",
-    "CATEGORIA_PARTICIPANTE",
     "CIDADE",
     "UF",
+    "CATEGORIA_PUBLICO",
+    "RELACAO_COM_GEAPA",
+    "INSTITUICAO",
+    "CURSO_OU_AREA",
+    "RGA",
+    "CARGO_OU_ATUACAO",
     "ORIGEM_CONTATO",
     "MOTIVACAO_OU_INTERESSE",
     "RECEBE_COMUNICADOS_GERAIS",
     "RECEBE_REUNIOES_ABERTAS",
     "RECEBE_APRESENTACOES_ALUNOS",
     "RECEBE_EVENTOS_VISITAS",
+    "AUTORIZA_ARMAZENAMENTO_DADOS",
+    "AUTORIZA_COMUNICACAO",
     "INTERESSE_EIXO_I",
     "INTERESSE_EIXO_II",
     "INTERESSE_EIXO_III",
@@ -71,8 +76,10 @@ const MEMBERS_EXTERNAL_CONTACTS_CFG = Object.freeze({
     "INTERESSE_EIXO_VI",
     "INTERESSE_EIXO_VII",
     "INTERESSE_EIXO_VIII",
-    "ATIVO",
+    "STATUS_CONTATO",
     "OBSERVACOES",
+    "DATA_CADASTRO_FORM",
+    "FORM_ROW",
     "CRIADO_EM",
     "ATUALIZADO_EM"
   ]),
@@ -80,7 +87,6 @@ const MEMBERS_EXTERNAL_CONTACTS_CFG = Object.freeze({
     "ID_PROFESSOR",
     "NOME",
     "EMAIL",
-    "EMAIL_PREFERENCIAL",
     "TELEFONE",
     "INSTAGRAM",
     "DATA_NASCIMENTO",
@@ -129,8 +135,12 @@ const MEMBERS_EXTERNAL_CONTACTS_CFG = Object.freeze({
     ID_PARTICIPANTE_EXTERNO: Object.freeze(["ID_PARTICIPANTE_EXTERNO"]),
     CARGO_OU_ATUACAO: Object.freeze(["CARGO_OU_ATUACAO", "Cargo ou atuacao", "Cargo/Atuacao"]),
     CURSO_OU_AREA: Object.freeze(["CURSO_OU_AREA", "Curso ou area", "Curso/Area"]),
-    CATEGORIA_PARTICIPANTE: Object.freeze(["CATEGORIA_PARTICIPANTE", "Categoria participante"]),
+    CATEGORIA_PUBLICO: Object.freeze(["CATEGORIA_PUBLICO", "CATEGORIA_PARTICIPANTE", "Categoria participante"]),
+    RELACAO_COM_GEAPA: Object.freeze(["RELACAO_COM_GEAPA"]),
+    RGA: Object.freeze(["RGA"]),
     MOTIVACAO_OU_INTERESSE: Object.freeze(["MOTIVACAO_OU_INTERESSE", "Motivacao ou interesse"]),
+    AUTORIZA_ARMAZENAMENTO_DADOS: Object.freeze(["AUTORIZA_ARMAZENAMENTO_DADOS"]),
+    AUTORIZA_COMUNICACAO: Object.freeze(["AUTORIZA_COMUNICACAO"]),
     INTERESSE_EIXO_I: Object.freeze(["INTERESSE_EIXO_I"]),
     INTERESSE_EIXO_II: Object.freeze(["INTERESSE_EIXO_II"]),
     INTERESSE_EIXO_III: Object.freeze(["INTERESSE_EIXO_III"]),
@@ -138,7 +148,11 @@ const MEMBERS_EXTERNAL_CONTACTS_CFG = Object.freeze({
     INTERESSE_EIXO_V: Object.freeze(["INTERESSE_EIXO_V"]),
     INTERESSE_EIXO_VI: Object.freeze(["INTERESSE_EIXO_VI"]),
     INTERESSE_EIXO_VII: Object.freeze(["INTERESSE_EIXO_VII"]),
-    INTERESSE_EIXO_VIII: Object.freeze(["INTERESSE_EIXO_VIII"])
+    INTERESSE_EIXO_VIII: Object.freeze(["INTERESSE_EIXO_VIII"]),
+    STATUS_CONTATO: Object.freeze(["STATUS_CONTATO", "ATIVO", "Ativo"]),
+    DATA_CADASTRO_FORM: Object.freeze(["DATA_CADASTRO_FORM"]),
+    EMAIL_CONTA_FORM: Object.freeze(["EMAIL_CONTA_FORM"]),
+    FORM_ROW: Object.freeze(["FORM_ROW"])
   }),
   professorsBaseHeaderAliases: Object.freeze({
     ID_PROFESSOR: Object.freeze(["ID_PROFESSOR"]),
@@ -154,6 +168,10 @@ const MEMBERS_EXTERNAL_CONTACTS_CFG = Object.freeze({
     accountEmail: Object.freeze(["Endereco de e-mail", "Endereço de e-mail"]),
     fullName: Object.freeze(["Nome Completo"]),
     preferredEmail: Object.freeze(["E-mail preferencial", "Email preferencial"]),
+    preferredEmailFallback: Object.freeze([
+      "E-mail preferencial (caso seja diferente do usado pra acessar este formulário)",
+      "Email preferencial (caso seja diferente do usado pra acessar este formulario)"
+    ]),
     phone: Object.freeze(["Telefone / WhatsApp", "Telefone/WhatsApp"]),
     instagram: Object.freeze(["@ Instagram, se houver", "Instagram, se houver"]),
     birthDate: Object.freeze(["Data de Nascimento", "Data de nascimento"]),
@@ -217,6 +235,20 @@ var MEMBERS_EXTERNAL_CONTACTS_RUNTIME = {
 };
 
 function members_importExternalContactsFromForm(opts) {
+  if (!members_getOperationalContext_()) {
+    return members_runOperationalFlow_(
+      MEMBERS_OPERATIONAL_CONTROL.flows.externalContactsImport,
+      MEMBERS_OPERATIONAL_CONTROL.capabilities.sync,
+      {
+        eventOrOpts: opts,
+        executionTypeFallback: "MANUAL"
+      },
+      function() {
+        return members_importExternalContactsFromForm(opts);
+      }
+    );
+  }
+
   members_assertCore_();
   opts = opts || {};
 
@@ -268,8 +300,30 @@ function members_importExternalContactsFromForm(opts) {
         var payloadInfo = isProfessor
           ? members_externalContactsBuildProfessorPayload_(record, emailInfo)
           : members_externalContactsBuildParticipantPayload_(record, emailInfo);
+        if (payloadInfo.authorizeStorage !== MEMBERS_EXTERNAL_CONTACTS_CFG.values.yes) {
+          result.skipped.push({
+            rowNumber: record.__rowNumber,
+            reason: "nao_autorizou_armazenamento"
+          });
+          return;
+        }
         var state = isProfessor ? professorState : participantState;
         var entityKey = isProfessor ? "professors" : "participants";
+        var existing = null;
+
+        if (members_externalContactsShouldSkipExistingForEntity_(opts, entityKey)) {
+          existing = members_externalContactsFindExistingRecordByEmails_(state, emailInfo.lookupEmails);
+          if (existing) {
+            result.skipped.push({
+              rowNumber: record.__rowNumber,
+              reason: "registro_existente_na_base",
+              entityType: entityKey,
+              existingRowNumber: existing.__rowNumber
+            });
+            return;
+          }
+        }
+
         var upsert = members_externalContactsUpsertByEmail_(state, payloadInfo.payload, {
           entityType: entityKey,
           emailInfo: emailInfo,
@@ -292,6 +346,26 @@ function members_importExternalContactsFromForm(opts) {
   } finally {
     if (lock) lock.releaseLock();
   }
+}
+
+function members_importNewExternalContactsFromTrigger() {
+  return members_runOperationalFlow_(
+    MEMBERS_OPERATIONAL_CONTROL.flows.externalContactsImport,
+    MEMBERS_OPERATIONAL_CONTROL.capabilities.sync,
+    {
+      executionTypeFallback: MEMBERS_OPERATIONAL_CONTROL.capabilities.trigger
+    },
+    function() {
+      members_assertCore_();
+
+      // O trigger automatico nao deve sobrescrever cadastros ja tratados
+      // manualmente na base de participantes externos. Ele apenas inclui
+      // novas respostas ainda nao cadastradas.
+      return members_importExternalContactsFromForm({
+        skipExistingParticipants: true
+      });
+    }
+  );
 }
 
 function members_prepareExternalContactsBases(opts) {
@@ -415,6 +489,42 @@ function members_diagnoseExternalContactsSetup() {
   var participantsSheet = members_externalContactsGetParticipantsSheet_();
   var formSheet = members_externalContactsGetFormSheet_();
   var axesSheet = members_sheetByKey_(MEMBERS_EXTERNAL_CONTACTS_CFG.registryKeys.thematicAxes);
+  var formRecords = members_readSheetRecordsCompat_(formSheet, {
+    headerRow: MEMBERS_EXTERNAL_CONTACTS_CFG.headerRow,
+    startRow: MEMBERS_EXTERNAL_CONTACTS_CFG.headerRow + 1
+  });
+  var participantsHeaders = members_externalContactsGetSheetHeaders_(participantsSheet);
+  var legacyHeaders = participantsHeaders.filter(function(header) {
+    return members_externalContactsNormalizeCompare_(header) === members_externalContactsNormalizeCompare_("CATEGORIA_PARTICIPANTE");
+  });
+  var stats = {
+    noStorageAuthorizationCount: 0,
+    studentSignalsCount: 0,
+    docenteDetectedCount: 0
+  };
+
+  formRecords.forEach(function(record) {
+    if (
+      members_externalContactsNormalizeYesNo_(
+        members_externalContactsGetFormValue_(record, "authorizeStorage")
+      ) !== MEMBERS_EXTERNAL_CONTACTS_CFG.values.yes
+    ) {
+      stats.noStorageAuthorizationCount += 1;
+    }
+
+    if (
+      members_externalContactsGetPreferredNonEmpty_([
+        members_externalContactsGetFormValue_(record, "studentCourse"),
+        members_externalContactsGetFormValue_(record, "studentRga")
+      ])
+    ) {
+      stats.studentSignalsCount += 1;
+    }
+
+    if (members_externalContactsIsProfessorRecord_(record)) {
+      stats.docenteDetectedCount += 1;
+    }
+  });
 
   return {
     ok: true,
@@ -433,11 +543,18 @@ function members_diagnoseExternalContactsSetup() {
       MEMBERS_EXTERNAL_CONTACTS_CFG.participantsHeaders,
       members_externalContactsGetBaseAliasMap_("participants")
     ),
+    participantsLegacyHeaders: legacyHeaders,
+    participantsMissingExpectedHeaders: members_externalContactsDiagnoseSheet_(
+      participantsSheet,
+      MEMBERS_EXTERNAL_CONTACTS_CFG.participantsHeaders,
+      members_externalContactsGetBaseAliasMap_("participants")
+    ).missing,
     thematicAxes: {
       key: MEMBERS_EXTERNAL_CONTACTS_CFG.registryKeys.thematicAxes,
       sheetName: axesSheet.getName(),
       activeCount: members_externalContactsLoadActiveAxes_().length
-    }
+    },
+    formStats: stats
   };
 }
 
@@ -592,7 +709,16 @@ function members_backfillExternalContactsBase() {
 function members_installExternalContactsImportTrigger() {
   members_assertCore_();
 
-  var handler = "members_importExternalContactsFromForm";
+  var handler = "members_importNewExternalContactsFromTrigger";
+  var removedLegacy = 0;
+
+  ScriptApp.getProjectTriggers().forEach(function(trigger) {
+    if (trigger.getHandlerFunction() === "members_importExternalContactsFromForm") {
+      ScriptApp.deleteTrigger(trigger);
+      removedLegacy += 1;
+    }
+  });
+
   var existing = ScriptApp.getProjectTriggers().filter(function(trigger) {
     return trigger.getHandlerFunction() === handler;
   });
@@ -601,7 +727,8 @@ function members_installExternalContactsImportTrigger() {
     return {
       ok: true,
       created: false,
-      existing: existing.length
+      existing: existing.length,
+      removedLegacy: removedLegacy
     };
   }
 
@@ -614,7 +741,8 @@ function members_installExternalContactsImportTrigger() {
     ok: true,
     created: true,
     handler: handler,
-    cadence: "everyHours(6)"
+    cadence: "everyHours(6)",
+    removedLegacy: removedLegacy
   };
 }
 
@@ -622,7 +750,10 @@ function members_uninstallExternalContactsImportTrigger() {
   var removed = 0;
 
   ScriptApp.getProjectTriggers().forEach(function(trigger) {
-    if (trigger.getHandlerFunction() === "members_importExternalContactsFromForm") {
+    if (
+      trigger.getHandlerFunction() === "members_importExternalContactsFromForm" ||
+      trigger.getHandlerFunction() === "members_importNewExternalContactsFromTrigger"
+    ) {
       ScriptApp.deleteTrigger(trigger);
       removed += 1;
     }
@@ -655,6 +786,10 @@ function members_externalContactsGetFormSheet_() {
   try {
     return members_sheetByKey_(MEMBERS_EXTERNAL_CONTACTS_CFG.registryKeys.form);
   } catch (err) {
+    try {
+      return members_sheetByKey_(MEMBERS_EXTERNAL_CONTACTS_CFG.registryKeys.formLegacy);
+    } catch (legacyErr) {}
+
     var entry = members_externalContactsFindRegistryEntryBySheetNames_(
       MEMBERS_EXTERNAL_CONTACTS_CFG.formSheetNames
     );
@@ -953,10 +1088,16 @@ function members_externalContactsResolveMainEmail_(record) {
   var preferred = members_externalContactsNormalizeEmail_(
     members_externalContactsGetFormValue_(record, "preferredEmail")
   );
+  var preferredFallback = members_externalContactsNormalizeEmail_(
+    members_externalContactsGetFormValue_(record, "preferredEmailFallback")
+  );
   var account = members_externalContactsNormalizeEmail_(
     members_externalContactsGetFormValue_(record, "accountEmail")
   );
-  var normalizedPreferred = preferred && preferred !== account ? preferred : "";
+  var normalizedPreferredSource = preferred || preferredFallback;
+  var normalizedPreferred = normalizedPreferredSource && normalizedPreferredSource !== account
+    ? normalizedPreferredSource
+    : "";
   var principal = normalizedPreferred || account;
 
   return {
@@ -987,6 +1128,10 @@ function members_externalContactsBuildCommonPayload_(record, emailInfo) {
   var authorizeMessages = members_externalContactsNormalizeYesNo_(
     members_externalContactsGetFormValue_(record, "authorizeMessages")
   );
+  var locationInfo = members_externalContactsResolveParticipantLocation_(
+    members_externalContactsGetFormValue_(record, "city"),
+    members_externalContactsGetFormValue_(record, "uf")
+  );
 
   if (authorizeMessages === MEMBERS_EXTERNAL_CONTACTS_CFG.values.no) {
     receiveGeneral = MEMBERS_EXTERNAL_CONTACTS_CFG.values.no;
@@ -999,15 +1144,14 @@ function members_externalContactsBuildCommonPayload_(record, emailInfo) {
     payload: {
       NOME: members_externalContactsGetFormValue_(record, "fullName"),
       EMAIL: emailInfo.principalEmail,
-      EMAIL_PREFERENCIAL: emailInfo.preferredEmail,
       TELEFONE: members_externalContactsGetFormValue_(record, "phone"),
       INSTAGRAM: members_externalContactsNormalizeInstagram_(members_externalContactsGetFormValue_(record, "instagram")),
       DATA_NASCIMENTO: members_externalContactsNormalizeBirthDateValue_(
         members_externalContactsGetFormValue_(record, "birthDate")
       ).value,
       SEXO: members_externalContactsGetFormValue_(record, "sex"),
-      CIDADE: members_externalContactsGetFormValue_(record, "city"),
-      UF: members_externalContactsGetFormValue_(record, "uf"),
+      CIDADE: locationInfo.city,
+      UF: locationInfo.uf,
       ORIGEM_CONTATO: members_externalContactsGetFormValue_(record, "sourceContact"),
       RECEBE_COMUNICADOS_GERAIS: receiveGeneral,
       RECEBE_REUNIOES_ABERTAS: receiveMeetings,
@@ -1017,7 +1161,8 @@ function members_externalContactsBuildCommonPayload_(record, emailInfo) {
     authorizeMessages: authorizeMessages,
     authorizeStorage: members_externalContactsNormalizeYesNo_(
       members_externalContactsGetFormValue_(record, "authorizeStorage")
-    )
+    ),
+    locationInfo: locationInfo
   };
 }
 
@@ -1047,12 +1192,13 @@ function members_externalContactsBuildProfessorPayload_(record, emailInfo) {
 
   return {
     payload: common.payload,
+    authorizeStorage: common.authorizeStorage,
+    authorizeMessages: common.authorizeMessages,
     managedObservation: members_externalContactsBuildManagedObservation_(
       record,
       [
         { label: "OBS_FORM", value: members_externalContactsGetFormValue_(record, "generalNotes") },
         { label: "PERFIL_GEAPA", value: members_externalContactsGetFormValue_(record, "geapaProfile") },
-        { label: "EMAIL_FORMS", value: emailInfo.accountEmail },
         {
           label: "DATA_NASCIMENTO_NAO_INTERPRETADA",
           value: birthDateInfo.ok ? "" : birthDateInfo.rawText
@@ -1079,12 +1225,9 @@ function members_externalContactsBuildParticipantPayload_(record, emailInfo) {
   var birthDateInfo = members_externalContactsNormalizeBirthDateValue_(
     members_externalContactsGetFormValue_(record, "birthDate")
   );
-  var category = members_externalContactsJoinDistinct_([
-    members_externalContactsGetFormValue_(record, "participantOption"),
-    members_externalContactsGetFormValue_(record, "participantRelation"),
-    members_externalContactsGetFormValue_(record, "geapaProfile")
-  ], " | ");
+  var classification = members_externalContactsClassifyParticipantRecord_(record);
   var courseArea = members_externalContactsJoinDistinct_([
+    members_externalContactsGetFormValue_(record, "studentCourse"),
     members_externalContactsGetFormValue_(record, "participantCourseArea"),
     members_externalContactsGetFormValue_(record, "participantAreaInterest")
   ], " | ");
@@ -1095,12 +1238,24 @@ function members_externalContactsBuildParticipantPayload_(record, emailInfo) {
     members_externalContactsGetFormValue_(record, "participantRole"),
     members_externalContactsGetFormValue_(record, "participantAreaInterest")
   ]);
+  var institution = members_externalContactsResolveParticipantInstitution_(record, classification);
+  var motivation = members_externalContactsGetPreferredNonEmpty_([
+    members_externalContactsGetFormValue_(record, "studentInterestGeapa"),
+    members_externalContactsGetFormValue_(record, "participantWhy")
+  ]);
 
-  common.payload.INSTITUICAO = members_externalContactsGetFormValue_(record, "participantInstitution");
+  common.payload.CATEGORIA_PUBLICO = classification.categoryPublico;
+  common.payload.RELACAO_COM_GEAPA = classification.relacaoComGeapa;
+  common.payload.INSTITUICAO = institution;
   common.payload.CARGO_OU_ATUACAO = cargoOuAtuacao;
   common.payload.CURSO_OU_AREA = courseArea;
-  common.payload.CATEGORIA_PARTICIPANTE = category;
-  common.payload.MOTIVACAO_OU_INTERESSE = members_externalContactsGetFormValue_(record, "participantWhy");
+  common.payload.RGA = members_externalContactsGetFormValue_(record, "studentRga");
+  common.payload.MOTIVACAO_OU_INTERESSE = motivation;
+  common.payload.AUTORIZA_ARMAZENAMENTO_DADOS = common.authorizeStorage;
+  common.payload.AUTORIZA_COMUNICACAO = common.authorizeMessages;
+  common.payload.STATUS_CONTATO = MEMBERS_EXTERNAL_CONTACTS_CFG.values.activeContact;
+  common.payload.DATA_CADASTRO_FORM = members_externalContactsGetFormValue_(record, "submittedAt");
+  common.payload.FORM_ROW = record && record.__rowNumber ? record.__rowNumber : "";
 
   Object.keys(flags).forEach(function(header) {
     common.payload[header] = flags[header];
@@ -1108,13 +1263,17 @@ function members_externalContactsBuildParticipantPayload_(record, emailInfo) {
 
   return {
     payload: common.payload,
+    authorizeStorage: common.authorizeStorage,
+    authorizeMessages: common.authorizeMessages,
     managedObservation: members_externalContactsBuildManagedObservation_(
       record,
       [
         { label: "OBS_FORM", value: members_externalContactsGetFormValue_(record, "generalNotes") },
         { label: "CARGO_OU_ATUACAO", value: members_externalContactsGetFormValue_(record, "participantRole") },
         { label: "VINCULO_ACADEMICO_TECNICO", value: members_externalContactsGetFormValue_(record, "participantAcademicBond") },
-        { label: "EMAIL_FORMS", value: emailInfo.accountEmail },
+        { label: "PERFIL_GEAPA", value: members_externalContactsGetFormValue_(record, "geapaProfile") },
+        { label: "OPCAO_PERFIL", value: members_externalContactsGetFormValue_(record, "participantOption") },
+        { label: "RELACAO_DECLARADA", value: members_externalContactsGetFormValue_(record, "participantRelation") },
         {
           label: "DATA_NASCIMENTO_NAO_INTERPRETADA",
           value: birthDateInfo.ok ? "" : birthDateInfo.rawText
@@ -1161,6 +1320,161 @@ function members_externalContactsIsProfessorRecord_(record) {
   return false;
 }
 
+function members_externalContactsClassifyParticipantRecord_(record) {
+  // A classificacao separa "quem a pessoa e" (categoria) de "como ela se
+  // relaciona com o GEAPA" (relacao), evitando depender da coluna legada
+  // CATEGORIA_PARTICIPANTE como fonte principal.
+  var geapaProfile = members_externalContactsGetFormValue_(record, "geapaProfile");
+  var participantOption = members_externalContactsGetFormValue_(record, "participantOption");
+  var studentCourse = members_externalContactsGetFormValue_(record, "studentCourse");
+  var studentRga = members_externalContactsGetFormValue_(record, "studentRga");
+  var studentInterest = members_externalContactsGetFormValue_(record, "studentInterestGeapa");
+  var participantWhy = members_externalContactsGetFormValue_(record, "participantWhy");
+  var normalizedProfile = members_externalContactsNormalizeCompare_(geapaProfile);
+  var normalizedOption = members_externalContactsNormalizeCompare_(participantOption);
+  var normalizedWhy = members_externalContactsNormalizeCompare_(participantWhy);
+  var normalizedInterest = members_externalContactsNormalizeCompare_(studentInterest);
+  var hasStudentSignals = !!members_externalContactsGetPreferredNonEmpty_([studentCourse, studentRga]);
+
+  if (members_externalContactsProfileMeansStudentUfmt_(geapaProfile)) {
+    return {
+      categoryPublico: "ESTUDANTE_UFMT",
+      relacaoComGeapa: "INTERESSADO_ATIVIDADES"
+    };
+  }
+
+  if (hasStudentSignals) {
+    return {
+      categoryPublico: "ESTUDANTE_EXTERNO",
+      relacaoComGeapa: "INTERESSADO_ATIVIDADES"
+    };
+  }
+
+  if (normalizedProfile.indexOf("outro contato academico") >= 0) {
+    return {
+      categoryPublico: "CONTATO_ACADEMICO",
+      relacaoComGeapa: members_externalContactsSuggestRelation_(normalizedWhy || normalizedInterest)
+    };
+  }
+
+  if (
+    normalizedOption.indexOf("produtor") >= 0 ||
+    normalizedOption.indexOf("rural") >= 0 ||
+    normalizedProfile.indexOf("produtor") >= 0
+  ) {
+    return {
+      categoryPublico: "PRODUTOR_RURAL",
+      relacaoComGeapa: "INTERESSADO_ATIVIDADES"
+    };
+  }
+
+  if (
+    normalizedOption.indexOf("profissional") >= 0 ||
+    normalizedOption.indexOf("tecnico") >= 0
+  ) {
+    return {
+      categoryPublico: "PROFISSIONAL_TECNICO",
+      relacaoComGeapa: "INTERESSADO_ATIVIDADES"
+    };
+  }
+
+  if (
+    normalizedOption.indexOf("empresa") >= 0 ||
+    normalizedOption.indexOf("instituicao") >= 0 ||
+    normalizedOption.indexOf("orgao") >= 0 ||
+    normalizedOption.indexOf("laboratorio") >= 0 ||
+    normalizedOption.indexOf("propriedade") >= 0
+  ) {
+    return {
+      categoryPublico: "EMPRESA_INSTITUICAO",
+      relacaoComGeapa: "CONTATO_ESTRATEGICO"
+    };
+  }
+
+  if (normalizedProfile.indexOf("interessad") >= 0) {
+    return {
+      categoryPublico: "COMUNIDADE_EXTERNA",
+      relacaoComGeapa: "INTERESSADO_ATIVIDADES"
+    };
+  }
+
+  return {
+    categoryPublico: "OUTRO",
+    relacaoComGeapa: members_externalContactsSuggestRelation_(normalizedWhy || normalizedInterest)
+  };
+}
+
+function members_externalContactsProfileMeansStudentUfmt_(profileText) {
+  var normalized = members_externalContactsNormalizeCompare_(profileText);
+  if (!normalized) return false;
+  return normalized.indexOf("aluno da ufmt") >= 0 || normalized.indexOf("estudante da ufmt") >= 0;
+}
+
+function members_externalContactsSuggestRelation_(normalizedText) {
+  var text = String(normalizedText || "").trim();
+  if (!text) return "INTERESSADO_ATIVIDADES";
+  if (text.indexOf("reuniao") >= 0) return "PARTICIPANTE_REUNIAO_ABERTA";
+  if (text.indexOf("apoio") >= 0) return "APOIO_EVENTUAL";
+  if (text.indexOf("convid") >= 0) return "CONVIDADO";
+  if (
+    text.indexOf("parceria") >= 0 ||
+    text.indexOf("estrateg") >= 0 ||
+    text.indexOf("contato") >= 0
+  ) {
+    return "CONTATO_ESTRATEGICO";
+  }
+  return "INTERESSADO_ATIVIDADES";
+}
+
+function members_externalContactsResolveParticipantInstitution_(record, classification) {
+  if (classification && classification.categoryPublico === "ESTUDANTE_UFMT") {
+    return "UFMT";
+  }
+
+  return members_externalContactsGetPreferredNonEmpty_([
+    members_externalContactsGetFormValue_(record, "studentInstitution"),
+    members_externalContactsGetFormValue_(record, "participantInstitution"),
+    members_externalContactsGetFormValue_(record, "participantCourseArea"),
+    members_externalContactsIsProfessorRecord_(record)
+      ? members_externalContactsGetFormValue_(record, "professorInstitution")
+      : ""
+  ]);
+}
+
+function members_externalContactsResolveParticipantLocation_(cityValue, ufValue) {
+  var city = String(cityValue || "").trim();
+  var uf = members_externalContactsNormalizeUfText_(ufValue);
+  var compactCity = city.replace(/\s+/g, " ").trim();
+  var cityWithUf = compactCity.match(/^(.*?)[\s\-\/,]+([A-Za-z]{2})$/);
+
+  if (cityWithUf) {
+    if (!uf) {
+      uf = members_externalContactsNormalizeUfText_(cityWithUf[2]);
+    }
+    compactCity = String(cityWithUf[1] || "").trim();
+  }
+
+  return {
+    city: compactCity,
+    uf: uf
+  };
+}
+
+function members_externalContactsNormalizeUfText_(value) {
+  var text = String(value || "").trim().toUpperCase();
+  if (!text) return "";
+  var lettersOnly = text.replace(/[^A-Z]/g, "");
+  return lettersOnly.length === 2 ? lettersOnly : text;
+}
+
+function members_externalContactsShouldSkipExistingForEntity_(opts, entityKey) {
+  opts = opts || {};
+  if (opts.skipExisting === true) return true;
+  if (entityKey === "participants" && opts.skipExistingParticipants === true) return true;
+  if (entityKey === "professors" && opts.skipExistingProfessors === true) return true;
+  return false;
+}
+
 function members_externalContactsUpsertByEmail_(state, payload, opts) {
   opts = opts || {};
 
@@ -1184,6 +1498,14 @@ function members_externalContactsUpsertByEmail_(state, payload, opts) {
 
   Object.keys(expandedPayload || {}).forEach(function(header) {
     if (members_findHeaderIndexByAliases_(state.headerMap, [header], { notFoundValue: -1 }) >= 0) {
+      // Nunca apaga dado manual existente com valor vazio vindo do formulario.
+      if (
+        currentRecord &&
+        members_externalContactsValueIsEmpty_(expandedPayload[header]) &&
+        !members_externalContactsValueIsEmpty_(nextRecord[header])
+      ) {
+        return;
+      }
       nextRecord[header] = expandedPayload[header];
     }
   });
@@ -1195,6 +1517,22 @@ function members_externalContactsUpsertByEmail_(state, payload, opts) {
 
   if (!String(nextRecord.ATIVO || "").trim()) {
     nextRecord.ATIVO = MEMBERS_EXTERNAL_CONTACTS_CFG.values.active;
+  }
+  if (!String(nextRecord.STATUS_CONTATO || "").trim() && state.entityType === "participants") {
+    nextRecord.STATUS_CONTATO = MEMBERS_EXTERNAL_CONTACTS_CFG.values.activeContact;
+  }
+
+  if (members_isOperationalDryRun_()) {
+    return {
+      ok: true,
+      dryRun: true,
+      action: currentRecord ? "dry_run_update" : "dry_run_create",
+      rowNumber: currentRecord ? currentRecord.__rowNumber : "",
+      email: principalEmail,
+      changedHeaders: currentRecord
+        ? members_externalContactsDiffHeaders_(state.headers, currentRecord, nextRecord)
+        : Object.keys(expandedPayload || {})
+    };
   }
 
   if (!currentRecord) {
@@ -1403,6 +1741,10 @@ function members_externalContactsValuesEqual_(left, right) {
   return String(left == null ? "" : left) === String(right == null ? "" : right);
 }
 
+function members_externalContactsValueIsEmpty_(value) {
+  return value == null || (typeof value !== "object" && String(value).trim() === "");
+}
+
 function members_externalContactsGetBaseAliasMap_(entityType) {
   var merged = {};
 
@@ -1447,10 +1789,13 @@ function members_externalContactsExpandPayloadToExistingAliases_(state, payload)
 }
 
 function members_externalContactsEnsureHeadersInSheet_(sheet, expectedHeaders, aliasMap) {
+  var skipWrites = members_isOperationalDryRun_();
   var lastCol = sheet.getLastColumn();
 
   if (lastCol < 1) {
-    sheet.getRange(1, 1, 1, expectedHeaders.length).setValues([expectedHeaders.slice()]);
+    if (!skipWrites) {
+      sheet.getRange(1, 1, 1, expectedHeaders.length).setValues([expectedHeaders.slice()]);
+    }
     return {
       sheetName: sheet.getName(),
       created: true,
@@ -1474,7 +1819,9 @@ function members_externalContactsEnsureHeadersInSheet_(sheet, expectedHeaders, a
 
     if (aliasIndex >= 0) {
       var oldHeader = headers[aliasIndex];
-      sheet.getRange(1, aliasIndex + 1).setValue(canonical);
+      if (!skipWrites) {
+        sheet.getRange(1, aliasIndex + 1).setValue(canonical);
+      }
       headers[aliasIndex] = canonical;
       renamed.push({ from: oldHeader, to: canonical });
       return;
@@ -1485,7 +1832,9 @@ function members_externalContactsEnsureHeadersInSheet_(sheet, expectedHeaders, a
   });
 
   if (appended.length) {
-    sheet.getRange(1, lastCol + 1, 1, appended.length).setValues([appended]);
+    if (!skipWrites) {
+      sheet.getRange(1, lastCol + 1, 1, appended.length).setValues([appended]);
+    }
   }
 
   return {
@@ -1493,7 +1842,7 @@ function members_externalContactsEnsureHeadersInSheet_(sheet, expectedHeaders, a
     created: false,
     renamed: renamed,
     appended: appended,
-    finalHeaders: members_externalContactsGetSheetHeaders_(sheet)
+    finalHeaders: skipWrites ? headers.slice() : members_externalContactsGetSheetHeaders_(sheet)
   };
 }
 
@@ -1553,8 +1902,23 @@ function members_externalContactsFindFirstExistingAliasIndex_(headers, aliases) 
 }
 
 function members_externalContactsGetFormValue_(record, fieldKey) {
-  var aliases = MEMBERS_EXTERNAL_CONTACTS_CFG.formFields[fieldKey] || [];
+  var aliases = members_externalContactsGetFormFieldAliases_(fieldKey);
   return members_externalContactsGetRecordValue_(record, aliases);
+}
+
+function members_externalContactsGetFormFieldAliases_(fieldKey) {
+  var baseAliases = MEMBERS_EXTERNAL_CONTACTS_CFG.formFields[fieldKey] || [];
+  var extraAliases = {
+    studentCourse: ["Qual seu curso?"],
+    studentRga: ["RGA"],
+    studentInterestGeapa: ["Qual seu interesse com o GEAPA?"],
+    studentInstitution: ["Instituição em que estuda", "Instituicao em que estuda"],
+    preferredEmailFallback: [
+      "E-mail preferencial (caso seja diferente do usado pra acessar este formulário)",
+      "Email preferencial (caso seja diferente do usado pra acessar este formulario)"
+    ]
+  };
+  return baseAliases.concat(extraAliases[fieldKey] || []);
 }
 
 function members_externalContactsGetRecordValue_(record, aliases) {
@@ -1647,6 +2011,16 @@ function members_externalContactsNormalizeBirthDateValue_(value) {
       Number(ddmmyyyy[3]),
       Number(ddmmyyyy[2]),
       Number(ddmmyyyy[1]),
+      rawText
+    );
+  }
+
+  var ddmmyyyyCompact = rawText.match(/^(\d{2})(\d{2})(\d{4})$/);
+  if (ddmmyyyyCompact) {
+    return members_externalContactsBuildBirthDateResult_(
+      Number(ddmmyyyyCompact[3]),
+      Number(ddmmyyyyCompact[2]),
+      Number(ddmmyyyyCompact[1]),
       rawText
     );
   }
