@@ -193,9 +193,12 @@ Fluxo:
 - sincroniza as opcoes de `DIRETORIA_NOMEACOES_FORM` com base na diretoria alvo e nos cargos vagos permitidos via formulario, e garante as perguntas fixas de permanencia e data prevista de saida;
 - identifica diretores de saida, envia convite para `CONSELHEIROS_ADESAO_FORM` e processa `CONSELHEIROS_ADESAO_RESPONSES`;
 - o convite para conselho considera apenas diretores com pelo menos 3 meses no cargo e que nao estejam reconduzidos para a proxima gestao;
+- reenvios de convite para conselheiros usam contador persistente em `ScriptProperties` para gerar uma `correlationKey` nova no Mail Hub, sem exigir limpeza manual da `MAIL_SAIDA` ou do `MAIL_INDICE`;
 - registra conselheiros aceitos em `VIGENCIA_CONSELHEIROS`;
 - sincroniza os acessos das pastas `ADMINISTRATIVO_PASTA` e `TRANSICAO_CONSELHEIROS_PASTA` de forma idempotente;
 - apenas diretores entram automaticamente no sync de acesso do Drive; assessores ficam fora do acesso automatico e so permanecem quando houver concessao manual excepcional ainda compatível com o vinculo ativo.
+- trata `TRANSICAO_CONSELHEIROS_PASTA` como catalogo oficial de leitura: os atalhos dentro dela sao resolvidos para as pastas reais de destino e essas pastas tambem recebem permissao de leitor para diretores em transicao e conselheiros ativos.
+- nas pastas reais apontadas pelos atalhos da transicao, a diretoria vigente e reconciliada como editora e transicao/conselheiros sao reconciliados como leitores, restaurando acessos removidos manualmente enquanto o vinculo continuar valido.
 - falhas do Drive ao listar ou conceder permissoes nao interrompem mais a rotina inteira e passam a registrar `likelyCause` quando houver indicio de bloqueio por compartilhamento externo ou permissao insuficiente.
 
 ---
@@ -277,25 +280,18 @@ Histórico de ex-membros e saídas homologadas.
 
 ---
 
-## Triggers adicionais de governanca
+## Triggers e jobs agregadores
 
-- `members_refreshGovernanceEligibilityPanel`
-  - recalculo periodico do painel temporal da diretoria em `MEMBERS_ATUAIS`.
+`members_installTriggers()` instala poucos gatilhos e deixa os fluxos recorrentes em jobs agregadores, seguindo o mesmo desenho operacional usado no modulo de atividades:
 
-- `members_syncDirectorNominationFormOptions`
-  - sincroniza cargos disponiveis do formulario oficial de nomeacoes.
+- `members_onEditProcessStatus`: gatilho reativo de edicao da planilha operacional.
+- `members_onFormSubmitChapasSync`: gatilho reativo de envio de formulario de chapas.
+- `members_jobMembershipLifecycle_`: importa seletivo, processa aceite/recusa, timeout de convites e eventos homologados de desligamento por faltas.
+- `members_jobChapas_`: processa chapas pendentes, canceladas e eleitas.
+- `members_jobGovernanceTransition_`: recalcula elegibilidade, sincroniza formulario de nomeacoes, processa nomeacoes, conselheiros e acessos de Drive.
+- `members_jobExternalContacts_`: importa periodicamente novos professores e participantes externos.
 
-- `members_processDirectorNominations`
-  - consome respostas de `DIRETORIA_NOMEACOES_RESPONSES`.
-
-- `members_sendCouncilorInvitationEmails`
-  - envia convites periodicos para adesao de conselheiros.
-
-- `members_processCouncilorAdhesions`
-  - consome respostas de `CONSELHEIROS_ADESAO_RESPONSES`.
-
-- `members_syncGovernanceDriveAccess`
-  - sincroniza os acessos das pastas institucionais de governanca.
+O desinstalador tambem remove os handlers time-based antigos para evitar duplicidade apos a migracao.
 
 ---
 
@@ -326,7 +322,8 @@ Entrega de 18/04/2026:
 - nomeacoes podem resultar em `APTO`, `APTO_COM_LIMITE` ou `INELEGIVEL`;
 - a chapa eleita passa a receber no e-mail de parabenizacao os links operacionais de transicao, consulta e nomeacao;
 - ex-diretores podem aderir ao conselho consultivo por formulario, com registro oficial em `VIGENCIA_CONSELHEIROS`, desde que nao tenham sido reconduzidos para a proxima gestao e tenham cumprido pelo menos 3 meses no cargo;
-- acessos de Drive passam a ser sincronizados automaticamente para diretores da diretoria vigente, diretores da chapa em transicao e conselheiros ativos, mantendo assessores fora do acesso automatico.
+- acessos de Drive passam a ser sincronizados automaticamente para diretores da diretoria vigente, diretores da chapa em transicao e conselheiros ativos, mantendo assessores fora do acesso automatico;
+- a pasta `TRANSICAO_CONSELHEIROS_PASTA` passa a funcionar como catalogo de atalhos autorizados: os destinos reais desses atalhos recebem leitura automatica para transicao/conselho e edicao para a diretoria vigente.
 
 ---
 
