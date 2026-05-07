@@ -286,6 +286,7 @@ timeoutDays: 7,
     properties: Object.freeze({
       nominationPrefix: "GEAPA_MEMBROS_GOV_NOM_",
       councilorInvitePrefix: "GEAPA_MEMBROS_GOV_CONV_",
+      councilorInviteResendPrefix: "GEAPA_MEMBROS_GOV_CONV_REENV_",
       councilorResponsePrefix: "GEAPA_MEMBROS_GOV_CONS_"
     })
   })

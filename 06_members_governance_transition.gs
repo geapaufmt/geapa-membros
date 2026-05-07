@@ -360,6 +360,34 @@ function members_getGovernancePropertyKey_(prefix, token) {
 }
 
 /**
+ * Retorna um valor numerico persistido em ScriptProperties.
+ *
+ * @param {string} prefix
+ * @param {string} token
+ * @return {number}
+ */
+function members_getGovernanceNumericState_(prefix, token) {
+  var key = members_getGovernancePropertyKey_(prefix, token);
+  if (!String(token || "").trim()) return 0;
+  var value = Number(members_getGovernanceScriptProperties_().getProperty(key) || 0);
+  return isNaN(value) ? 0 : value;
+}
+
+/**
+ * Incrementa um contador persistente de governanca.
+ *
+ * @param {string} prefix
+ * @param {string} token
+ * @return {number}
+ */
+function members_incrementGovernanceNumericState_(prefix, token) {
+  if (!String(token || "").trim()) return 0;
+  var nextValue = members_getGovernanceNumericState_(prefix, token) + 1;
+  members_setGovernanceProcessingState_(prefix, token, String(nextValue));
+  return nextValue;
+}
+
+/**
  * Verifica se um token ja foi processado anteriormente.
  *
  * @param {string} prefix
@@ -409,6 +437,7 @@ function members_setGovernanceProcessingState_(prefix, token, value) {
 function members_clearRecentCouncilorInviteStates(limit) {
   var maxItems = Math.max(1, Number(limit || 6) || 6);
   var prefix = String(SETTINGS.governance.properties.councilorInvitePrefix || "");
+  var resendPrefix = String(SETTINGS.governance.properties.councilorInviteResendPrefix || "");
   var props = members_getGovernanceScriptProperties_();
   var all = props.getProperties() || {};
   var entries = Object.keys(all).filter(function(key) {
@@ -429,6 +458,10 @@ function members_clearRecentCouncilorInviteStates(limit) {
   var targets = entries.slice(0, maxItems);
   targets.forEach(function(item) {
     props.deleteProperty(item.key);
+    if (resendPrefix) {
+      var token = String(item.key || "").slice(prefix.length);
+      members_incrementGovernanceNumericState_(resendPrefix, token);
+    }
   });
 
   members_logGovernanceEvent_("COUNCILOR_INVITE_STATE_CLEARED", {
@@ -2859,6 +2892,7 @@ function members_findGovernanceOutgoingDirectors_() {
  * @return {Object}
  */
 function members_buildGovernanceCouncilorInviteOutgoingContract_(ctx) {
+  var attempt = Math.max(1, Number(ctx.attempt || 1) || 1);
   var blocks = [
     {
       title: "Como responder",
@@ -2886,7 +2920,7 @@ function members_buildGovernanceCouncilorInviteOutgoingContract_(ctx) {
     moduleName: "MEMBROS",
     templateKey: "GEAPA_CLASSICO",
     correlationKey: GEAPA_CORE.coreMailBuildCorrelationKey("MEM", {
-      businessId: String(new Date().getFullYear()) + "-" + members_onlyDigitsCompat_(ctx.rga),
+      businessId: String(new Date().getFullYear()) + "-" + members_onlyDigitsCompat_(ctx.rga) + "-T" + attempt,
       flowCode: "GOV",
       stage: "CONVCONS"
     }),
@@ -2909,6 +2943,7 @@ function members_buildGovernanceCouncilorInviteOutgoingContract_(ctx) {
     metadata: {
       rga: ctx.rga,
       roleName: ctx.roleName,
+      attempt: attempt,
       notificationType: "COUNCILOR_INVITE"
     }
   };
@@ -2955,6 +2990,10 @@ function members_sendCouncilorInvitationEmails_impl_() {
       summary.skipped += 1;
       return;
     }
+    var attempt = Math.max(
+      1,
+      members_getGovernanceNumericState_(SETTINGS.governance.properties.councilorInviteResendPrefix, inviteKey) + 1
+    );
 
     var email = members_normalizeEmailCompat_(item.record["E-mail"] || item.record["Email"] || item.record["EMAIL"]);
     if (!email) {
@@ -2968,6 +3007,7 @@ function members_sendCouncilorInvitationEmails_impl_() {
         email: email,
         roleName: members_getGovernanceOccupationValue_(item.record),
         effectiveEnd: item.effectiveEnd,
+        attempt: attempt,
         formUrl: members_buildGovernanceFormUrl_(SETTINGS.governance.forms.councilorFormKey)
       })
     );
@@ -2986,7 +3026,8 @@ function members_sendCouncilorInvitationEmails_impl_() {
     members_logGovernanceEvent_("COUNCILOR_INVITE_SENT", {
       rga: item.record["RGA"],
       roleName: members_getGovernanceOccupationValue_(item.record),
-      effectiveEnd: members_formatGovernanceDate_(item.effectiveEnd)
+      effectiveEnd: members_formatGovernanceDate_(item.effectiveEnd),
+      attempt: attempt
     });
 
     summary.sent += 1;
@@ -3413,6 +3454,146 @@ function members_buildGovernanceTransitionManualProtectedEmails_() {
 }
 
 /**
+ * Resolve os atalhos da pasta de transicao para suas pastas reais de destino.
+ *
+ * A pasta Transicao e Conselheiros funciona como catalogo operacional do que
+ * deve continuar disponivel em leitura para transicao e conselho.
+ *
+ * @param {GoogleAppsScript.Drive.Folder} folder
+ * @return {Object}
+ */
+function members_listGovernanceTransitionShortcutTargetFolders_(folder) {
+  var summary = {
+    ok: true,
+    scanned: 0,
+    resolved: 0,
+    skipped: 0,
+    folders: [],
+    warnings: [],
+    errors: []
+  };
+  var seen = {};
+
+  if (!folder) {
+    summary.ok = false;
+    summary.errors.push({ reason: "missing_transition_folder" });
+    return summary;
+  }
+
+  try {
+    var files = folder.getFiles();
+    while (files.hasNext()) {
+      var file = files.next();
+      summary.scanned += 1;
+
+      var name = file.getName();
+      var mimeType = "";
+      try {
+        mimeType = file.getMimeType();
+      } catch (mimeErr) {
+        summary.skipped += 1;
+        summary.warnings.push({
+          item: name,
+          reason: "mime_type_unavailable",
+          error: String(mimeErr && mimeErr.message ? mimeErr.message : mimeErr)
+        });
+        continue;
+      }
+
+      if (mimeType !== "application/vnd.google-apps.shortcut") {
+        summary.skipped += 1;
+        summary.warnings.push({
+          item: name,
+          reason: "not_a_shortcut",
+          mimeType: mimeType
+        });
+        continue;
+      }
+
+      var targetId = "";
+      var targetMimeType = "";
+      try {
+        targetId = typeof file.getTargetId === "function" ? String(file.getTargetId() || "").trim() : "";
+        targetMimeType = typeof file.getTargetMimeType === "function" ? String(file.getTargetMimeType() || "").trim() : "";
+      } catch (targetErr) {
+        summary.skipped += 1;
+        summary.warnings.push({
+          item: name,
+          reason: "shortcut_target_unavailable",
+          error: String(targetErr && targetErr.message ? targetErr.message : targetErr)
+        });
+        continue;
+      }
+
+      if (!targetId) {
+        summary.skipped += 1;
+        summary.warnings.push({ item: name, reason: "shortcut_without_target_id" });
+        continue;
+      }
+
+      if (targetMimeType && targetMimeType !== "application/vnd.google-apps.folder") {
+        summary.skipped += 1;
+        summary.warnings.push({
+          item: name,
+          targetId: targetId,
+          reason: "shortcut_target_is_not_folder",
+          targetMimeType: targetMimeType
+        });
+        continue;
+      }
+
+      if (seen[targetId]) {
+        summary.skipped += 1;
+        summary.warnings.push({ item: name, targetId: targetId, reason: "duplicate_target" });
+        continue;
+      }
+
+      try {
+        var targetFolder = DriveApp.getFolderById(targetId);
+        seen[targetId] = true;
+        summary.folders.push({
+          id: targetId,
+          name: targetFolder.getName(),
+          sourceShortcutName: name,
+          folder: targetFolder
+        });
+        summary.resolved += 1;
+      } catch (openErr) {
+        var diagnosis = members_describeGovernanceDriveError_("", openErr);
+        summary.skipped += 1;
+        summary.warnings.push({
+          item: name,
+          targetId: targetId,
+          reason: "target_folder_unavailable",
+          error: diagnosis.error,
+          likelyCause: diagnosis.likelyCause
+        });
+      }
+    }
+  } catch (err) {
+    var listDiagnosis = members_describeGovernanceDriveError_("", err);
+    summary.ok = false;
+    summary.errors.push({
+      reason: "shortcut_folder_list_error",
+      error: listDiagnosis.error,
+      likelyCause: listDiagnosis.likelyCause
+    });
+  }
+
+  if (summary.warnings.length || summary.errors.length) {
+    members_logGovernanceEvent_("DRIVE_TRANSITION_SHORTCUT_TARGETS", {
+      scanned: summary.scanned,
+      resolved: summary.resolved,
+      skipped: summary.skipped,
+      warnings: summary.warnings.length,
+      errors: summary.errors.length
+    });
+  }
+
+  return summary;
+}
+
+/**
  * Extrai os emails atuais de uma pasta para uma role especifica.
  *
  * @param {GoogleAppsScript.Drive.Folder} folder
@@ -3578,6 +3759,59 @@ function members_syncGovernanceFolderRole_(folder, role, desiredEmails, protecte
 }
 
 /**
+ * Sincroniza leitores/editores nas pastas reais apontadas pelos atalhos da transicao.
+ *
+ * @param {GoogleAppsScript.Drive.Folder} transitionFolder
+ * @param {string[]} desiredReaders
+ * @param {string[]} desiredEditors
+ * @param {string[]} protectedEmails
+ * @return {Object}
+ */
+function members_syncGovernanceTransitionShortcutTargets_(transitionFolder, desiredReaders, desiredEditors, protectedEmails) {
+  var targetDiscovery = members_listGovernanceTransitionShortcutTargetFolders_(transitionFolder);
+  var editors = members_uniqueEmailsCompat_(desiredEditors || []);
+  var readers = members_uniqueEmailsCompat_(desiredReaders || []).filter(function(email) {
+    return editors.indexOf(email) < 0;
+  });
+  var protectedSet = members_uniqueEmailsCompat_((protectedEmails || []).concat(editors));
+  var summary = {
+    ok: targetDiscovery.ok !== false,
+    scanned: targetDiscovery.scanned,
+    resolved: targetDiscovery.resolved,
+    skipped: targetDiscovery.skipped,
+    warnings: targetDiscovery.warnings,
+    errors: targetDiscovery.errors,
+    folders: []
+  };
+
+  targetDiscovery.folders.forEach(function(item) {
+    var folderSummary = {
+      id: item.id,
+      name: item.name,
+      sourceShortcutName: item.sourceShortcutName,
+      editors: members_syncGovernanceFolderRole_(
+        item.folder,
+        "editor",
+        editors,
+        protectedEmails
+      ),
+      viewers: null
+    };
+
+    folderSummary.viewers = members_syncGovernanceFolderRole_(
+      item.folder,
+      "viewer",
+      readers,
+      protectedSet
+    );
+
+    summary.folders.push(folderSummary);
+  });
+
+  return summary;
+}
+
+/**
  * Sincroniza as permissoes das pastas Administrativo e Transicao/Conselheiros.
  *
  * @return {Object}
@@ -3613,10 +3847,16 @@ function members_syncGovernanceDriveAccess_impl_() {
   var transicaoProtectedEmails = members_uniqueEmailsCompat_(
     protectedEmails.concat(members_buildGovernanceTransitionManualProtectedEmails_())
   );
+  var transitionTargetProtectedEmails = members_uniqueEmailsCompat_(
+    administrativoProtectedEmails.concat(transicaoProtectedEmails)
+  );
+  var administrativeEditors = members_buildGovernanceAdministrativeEditors_();
+  var transitionReaders = members_buildGovernanceTransitionReaders_();
   var summary = {
     ok: true,
     administrativo: null,
-    transicao: null
+    transicao: null,
+    transitionTargets: null
   };
 
   if (administrativo) {
@@ -3624,7 +3864,7 @@ function members_syncGovernanceDriveAccess_impl_() {
       editors: members_syncGovernanceFolderRole_(
         administrativo,
         "editor",
-        members_buildGovernanceAdministrativeEditors_(),
+        administrativeEditors,
         administrativoProtectedEmails
       ),
       viewers: members_syncGovernanceFolderRole_(
@@ -3641,7 +3881,7 @@ function members_syncGovernanceDriveAccess_impl_() {
       viewers: members_syncGovernanceFolderRole_(
         transicao,
         "viewer",
-        members_buildGovernanceTransitionReaders_(),
+        transitionReaders,
         transicaoProtectedEmails
       ),
       editors: members_syncGovernanceFolderRole_(
@@ -3651,6 +3891,13 @@ function members_syncGovernanceDriveAccess_impl_() {
         transicaoProtectedEmails
       )
     };
+
+    summary.transitionTargets = members_syncGovernanceTransitionShortcutTargets_(
+      transicao,
+      transitionReaders,
+      administrativeEditors,
+      transitionTargetProtectedEmails
+    );
   }
 
   return summary;
