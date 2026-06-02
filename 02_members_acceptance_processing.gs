@@ -1059,6 +1059,22 @@ function members_integrateAcceptedFutureMember_(futureSheet, currentSheet, absol
     notes: 'Ingresso integrado automaticamente em MEMBERS_ATUAIS.'
   });
 
+  members_tryApplyPessoasV2Event_({
+    eventType: 'INGRESSO',
+    eventDate: acceptedAt,
+    acceptedAt: acceptedAt,
+    rga: rga,
+    memberName: futureIdx.name >= 0 ? String(row[futureIdx.name] || '').trim() : '',
+    memberEmail: futureIdx.email >= 0 ? String(row[futureIdx.email] || '').trim() : '',
+    entrySemester: entrySemester,
+    currentSemester: members_getFutureSourceCell_(row, rowFormulas, members_getHeaderMap_(futureHeaders), 'currentSemester'),
+    academicHistory: members_getFutureSourceCell_(row, rowFormulas, members_getHeaderMap_(futureHeaders), 'academicHistory'),
+    sourceModule: 'geapa-membros',
+    sourceKey: SETTINGS.futureKey,
+    sourceRow: absoluteRow,
+    notes: 'Ingresso homologado por aceite de convite e integrado em MEMBERS_ATUAIS.'
+  });
+
   GEAPA_CORE.coreSyncMembersCurrentDerivedFields();
 
   if (futureIdx.status >= 0) {

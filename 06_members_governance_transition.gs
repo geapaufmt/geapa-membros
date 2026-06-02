@@ -59,6 +59,8 @@ const MEMBERS_GOVERNANCE_FORM_ALIASES = Object.freeze({
       "Aceita o convite?",
       "Deseja aderir?",
       "Aceite",
+      "Aceite ou recusa",
+      "Aceite/recusa",
       "Resposta"
     ])
   }),
@@ -1149,6 +1151,197 @@ function members_getGovernanceTargetBoard_(boards, explicitBoardId) {
 }
 
 /**
+ * Define a prioridade de exibicao de uma ocupacao derivada das vigencias.
+ *
+ * @param {string} destination
+ * @return {number}
+ */
+function members_getGovernanceCurrentOccupationPriority_(destination) {
+  var normalized = members_normalizeGovernanceText_(destination);
+  if (normalized === members_normalizeGovernanceText_(SETTINGS.governance.values.destinationDiretoria)) return 1;
+  if (normalized === members_normalizeGovernanceText_(SETTINGS.governance.values.destinationAssessoria)) return 2;
+  if (normalized === members_normalizeGovernanceText_(SETTINGS.governance.values.destinationConselho)) return 3;
+  return 9;
+}
+
+/**
+ * Resolve a ocupacao atual de um membro a partir das abas oficiais de vigencia.
+ *
+ * A coluna em MEMBERS_ATUAIS e tratada como painel derivado: primeiro sao
+ * considerados vinculos ativos em Diretoria, depois Assessoria, depois Conselho.
+ * Sem vinculo ativo de governanca, o valor volta para "Membro".
+ *
+ * @param {string} rga
+ * @param {Array<Object>} governanceRecords
+ * @param {Object<string, Object>} boardsById
+ * @param {*=} referenceDate
+ * @return {string}
+ */
+function members_resolveCurrentOccupationFromGovernance_(rga, governanceRecords, boardsById, referenceDate) {
+  var targetRga = members_onlyDigitsCompat_(rga);
+  var today = members_toGovernanceDate_(referenceDate || new Date());
+  var matches = [];
+
+  if (!targetRga || !today) return "Membro";
+
+  (governanceRecords || []).forEach(function(record) {
+    if (members_onlyDigitsCompat_(record["RGA"]) !== targetRga) return;
+
+    var interval = members_getGovernanceEffectiveInterval_(record, boardsById);
+    if (!interval) return;
+    if (interval.start.getTime() > today.getTime() || interval.end.getTime() < today.getTime()) return;
+
+    var occupation = String(members_getRecordValueByAliases_(record, MEMBERS_GOVERNANCE_OCCUPATION_ALIASES) || "").trim();
+    if (!occupation && members_normalizeGovernanceText_(record.__governanceDestination) === members_normalizeGovernanceText_(SETTINGS.governance.values.destinationConselho)) {
+      occupation = SETTINGS.governance.values.cargoConselheiroNome;
+    }
+    if (!occupation) return;
+
+    matches.push({
+      occupation: occupation,
+      priority: members_getGovernanceCurrentOccupationPriority_(record.__governanceDestination)
+    });
+  });
+
+  if (!matches.length) return "Membro";
+
+  matches.sort(function(a, b) {
+    if (a.priority !== b.priority) return a.priority - b.priority;
+    return a.occupation.localeCompare(b.occupation);
+  });
+
+  var bestPriority = matches[0].priority;
+  return matches
+    .filter(function(item) { return item.priority === bestPriority; })
+    .map(function(item) { return item.occupation; })
+    .filter(function(value, index, list) { return value && list.indexOf(value) === index; })
+    .join(" / ") || "Membro";
+}
+
+/**
+ * Localiza com seguranca a coluna de ocupacao atual em MEMBERS_ATUAIS.
+ *
+ * Usa apenas os aliases especificos da ocupacao atual e recusa explicitamente
+ * colunas de flag/status para evitar escrita em campos operacionais indevidos.
+ *
+ * @param {string[]} headers
+ * @return {number}
+ */
+function members_findGovernanceCurrentOccupationColumnIndex_(headers) {
+  var allowed = members_getHeaderAliases_("current", "currentRole").map(members_normalizeOffboardingHeader_);
+  var forbidden = members_getHeaderAliases_("current", "suspended")
+    .concat(members_getHeaderAliases_("current", "status"))
+    .map(members_normalizeOffboardingHeader_);
+
+  for (var i = 0; i < (headers || []).length; i++) {
+    var normalized = members_normalizeOffboardingHeader_(headers[i]);
+    if (forbidden.indexOf(normalized) >= 0) continue;
+    if (allowed.indexOf(normalized) >= 0) return i;
+  }
+
+  return -1;
+}
+
+/**
+ * Localiza com seguranca a coluna de flag de suspensao em MEMBERS_ATUAIS.
+ *
+ * @param {string[]} headers
+ * @return {number}
+ */
+function members_findGovernanceCurrentSuspendedColumnIndex_(headers) {
+  var allowed = members_getHeaderAliases_("current", "suspended").map(members_normalizeOffboardingHeader_);
+
+  for (var i = 0; i < (headers || []).length; i++) {
+    if (allowed.indexOf(members_normalizeOffboardingHeader_(headers[i])) >= 0) return i;
+  }
+
+  return -1;
+}
+
+/**
+ * Verifica se uma linha de processamento indica suspensao efetivada/homologada.
+ *
+ * @param {Object} record
+ * @return {boolean}
+ */
+function members_isApprovedSuspensionProcessingRecord_(record) {
+  var applied = members_normalizeGovernanceText_(members_getRecordValueByAliases_(record, [
+    "SUSPENSAO_APLICADA",
+    "SUSPENSÃO_APLICADA",
+    "SUSPENSAO EFETIVADA",
+    "SUSPENSÃO EFETIVADA"
+  ]));
+  var decision = members_normalizeGovernanceText_(members_getRecordValueByAliases_(record, [
+    "DECISAO_DIRETORIA",
+    "DECISÃO_DIRETORIA",
+    "DECISAO",
+    "DECISÃO"
+  ]));
+  var status = members_normalizeGovernanceText_(members_getRecordValueByAliases_(record, [
+    "STATUS_SOLICITACAO",
+    "STATUS_SOLICITAÇÃO",
+    "STATUS"
+  ]));
+
+  if (members_isGovernanceYes_(applied)) return true;
+
+  return decision === "deferido" ||
+    decision === "aprovado" ||
+    decision === "homologado" ||
+    status === "deferido" ||
+    status === "aprovado" ||
+    status === "homologado" ||
+    status === "aplicado" ||
+    status === "aplicada" ||
+    status === "processado" ||
+    status === "processada";
+}
+
+/**
+ * Monta o indice de RGAs que ja tiveram suspensao registrada.
+ *
+ * @return {Object<string, boolean>}
+ */
+function members_buildSuspendedRgaIndexFromProcessing_() {
+  var index = {};
+
+  try {
+    members_readRecordsByKey_(SETTINGS.offboarding.suspensionQueueKey, {
+      skipBlankRows: true
+    }).forEach(function(record) {
+      var rga = members_onlyDigitsCompat_(members_getRecordValueByAliases_(record, ["RGA", "RGA_MEMBRO"]));
+      if (!rga || !members_isApprovedSuspensionProcessingRecord_(record)) return;
+      index[rga] = true;
+    });
+  } catch (err) {
+    members_logGovernanceEvent_("SUSPENSION_FLAG_PROCESSING_READ_ERROR", {
+      key: SETTINGS.offboarding.suspensionQueueKey,
+      error: err && err.message ? err.message : String(err)
+    });
+  }
+
+  try {
+    members_readRecordsByKey_(SETTINGS.lifecycle.eventKey, {
+      skipBlankRows: true
+    }).forEach(function(record) {
+      var eventType = members_normalizeGovernanceText_(members_getRecordValueByAliases_(record, members_getHeaderAliases_("lifecycleEvent", "eventType")));
+      var eventStatus = members_normalizeGovernanceText_(members_getRecordValueByAliases_(record, members_getHeaderAliases_("lifecycleEvent", "eventStatus")));
+      var rga = members_onlyDigitsCompat_(members_getRecordValueByAliases_(record, members_getHeaderAliases_("lifecycleEvent", "memberRga")));
+      if (!rga || eventType.indexOf("suspensao") < 0) return;
+      if (eventStatus !== "homologado" && eventStatus !== "processado" && eventStatus !== "processado_membros") return;
+      index[rga] = true;
+    });
+  } catch (err2) {
+    members_logGovernanceEvent_("SUSPENSION_FLAG_EVENTS_READ_ERROR", {
+      key: SETTINGS.lifecycle.eventKey,
+      error: err2 && err2.message ? err2.message : String(err2)
+    });
+  }
+
+  return index;
+}
+
+/**
  * Retorna as janelas oficiais de semestres da diretoria.
  *
  * @return {Array<Object>}
@@ -1527,6 +1720,11 @@ function members_refreshGovernanceEligibilityPanel_impl_() {
     return String(item || "").trim();
   });
   var map = members_getHeaderMap_(headers);
+  var currentOccupationCol = members_findGovernanceCurrentOccupationColumnIndex_(headers);
+  var currentSuspendedCol = members_findGovernanceCurrentSuspendedColumnIndex_(headers);
+  var suspendedRgaIndex = currentSuspendedCol >= 0
+    ? members_buildSuspendedRgaIndexFromProcessing_()
+    : {};
   var records = members_readSheetRecordsCompat_(currentSheet);
   var updated = 0;
   var skipWrites = members_isOperationalDryRun_();
@@ -1539,6 +1737,17 @@ function members_refreshGovernanceEligibilityPanel_impl_() {
     var panel = members_evaluateGovernanceEligibility_(rga, targetBoard, governanceRecords, cargoCatalog, boardsById, semesterWindows, {
       consumptionReferenceDate: new Date()
     });
+    var currentOccupation = members_resolveCurrentOccupationFromGovernance_(rga, governanceRecords, boardsById, new Date());
+
+    if (currentOccupationCol >= 0 && !skipWrites) {
+      currentSheet.getRange(rowNumber, currentOccupationCol + 1).setValue(currentOccupation);
+    }
+
+    if (currentSuspendedCol >= 0 && !skipWrites) {
+      currentSheet.getRange(rowNumber, currentSuspendedCol + 1)
+        .setValue(suspendedRgaIndex[members_onlyDigitsCompat_(rga)] ? SETTINGS.offboarding.yes : SETTINGS.governance.values.no);
+    }
+
     var writes = [
       { aliases: members_getHeaderAliases_("current", "diretoriaLimitCountedDays"), value: panel.countedDays },
       { aliases: members_getHeaderAliases_("current", "diretoriaLimitDays"), value: panel.limitDays },
@@ -2828,11 +3037,13 @@ function members_buildGovernanceCouncilorInviteKey_(record, effectiveEnd) {
 }
 
 /**
- * Identifica diretores que estao proximos do fim e ainda nao foram convidados.
+ * Identifica diretores que estao proximos do fim e podem aderir ao conselho.
  *
+ * @param {Object=} opts
  * @return {Array<Object>}
  */
-function members_findGovernanceOutgoingDirectors_() {
+function members_findGovernanceOutgoingDirectors_(opts) {
+  opts = opts || {};
   var boards = members_readGovernanceBoardWindows_();
   var boardsById = members_indexGovernanceBoardsById_(boards);
   var directorRecords = members_readGovernanceRecordsByDestinations_([
@@ -2844,6 +3055,9 @@ function members_findGovernanceOutgoingDirectors_() {
     SETTINGS.governance.values.destinationConselho
   ]);
   var today = members_toGovernanceDate_(new Date());
+  var minDate = opts.includeRecentlyEnded === true
+    ? members_addGovernanceDays_(today, -SETTINGS.governance.limits.councilorInvitationLeadDays)
+    : today;
   var maxDate = members_addGovernanceDays_(today, SETTINGS.governance.limits.councilorInvitationLeadDays);
   var cargoCatalog = members_readGovernanceCargoCatalog_();
 
@@ -2873,7 +3087,7 @@ function members_findGovernanceOutgoingDirectors_() {
       if (isReconducted) return false;
     }
 
-    return interval.end.getTime() >= today.getTime() && interval.end.getTime() <= maxDate.getTime();
+    return interval.end.getTime() >= minDate.getTime() && interval.end.getTime() <= maxDate.getTime();
   }).map(function(record) {
     var interval = members_getGovernanceEffectiveInterval_(record, boardsById);
     return Object.freeze({
@@ -2897,8 +3111,8 @@ function members_buildGovernanceCouncilorInviteOutgoingContract_(ctx) {
     {
       title: "Como responder",
       text: ctx.formUrl
-        ? ("Preencha o formulario oficial de adesao neste link: " + ctx.formUrl)
-        : "Use o formulario oficial de adesao disponibilizado pela diretoria."
+        ? ("Preencha o formulário oficial de adesão neste link: " + ctx.formUrl)
+        : "Use o formulário oficial de adesão disponibilizado pela diretoria."
     },
     {
       title: "Periodo atual",
@@ -2934,8 +3148,8 @@ function members_buildGovernanceCouncilorInviteOutgoingContract_(ctx) {
     subjectHuman: SETTINGS.governance.email.councilorInviteSubject,
     payload: {
       title: SETTINGS.governance.email.councilorInviteSubject,
-      subtitle: "Transicao institucional do GEAPA",
-      introText: "Registramos que o seu vinculo atual na diretoria se aproxima do encerramento e gostar\u00edamos de convidar voc\u00ea para aderir ao corpo de conselheiros consultivos do GEAPA.",
+      subtitle: "Transição institucional do GEAPA",
+      introText: "Registramos que o seu vínculo atual na diretoria se aproxima do encerramento e gostaríamos de convidar você para aderir ao corpo de conselheiros consultivos do GEAPA.",
       blocks: blocks
     },
     priority: "NORMAL",
@@ -2947,6 +3161,120 @@ function members_buildGovernanceCouncilorInviteOutgoingContract_(ctx) {
       notificationType: "COUNCILOR_INVITE"
     }
   };
+}
+
+/**
+ * Monta o contrato de email de confirmacao ou recusa da adesao ao conselho.
+ *
+ * @param {Object} ctx
+ * @return {Object}
+ */
+function members_buildGovernanceCouncilorDecisionOutgoingContract_(ctx) {
+  var accepted = ctx.accepted === true;
+  var responseToken = members_buildGovernanceCouncilorDecisionCorrelationToken_(ctx.responseKey);
+  var subject = accepted
+    ? SETTINGS.governance.email.councilorAcceptedSubject
+    : SETTINGS.governance.email.councilorRefusedSubject;
+  var blocks = [
+    {
+      title: "Resultado registrado",
+      items: [
+        { label: "Nome", value: ctx.name },
+        { label: "RGA", value: ctx.rga },
+        { label: "Resposta", value: accepted ? "ACEITO" : "RECUSADO" }
+      ]
+    }
+  ];
+
+  if (accepted) {
+    blocks.push({
+      title: "Vigência do vínculo",
+      items: [
+        { label: "Ocupação", value: ctx.roleName },
+        { label: "Início", value: members_formatGovernanceDate_(ctx.startDate) },
+        { label: "Fim previsto", value: members_formatGovernanceDate_(ctx.endDate) }
+      ]
+    });
+    blocks.push({
+      title: "Como funciona",
+      text: "O conselho consultivo é um vínculo de apoio institucional e memória do GEAPA. Ele permite acesso de leitura aos materiais de transição/conselheiros enquanto o vínculo estiver ativo, sem conceder poderes automáticos de diretoria ou edição administrativa."
+    });
+    blocks.push({
+      title: "Acessos",
+      text: "A permissão de leitor na pasta de Transição e Conselheiros é sincronizada automaticamente a partir da data de início do vínculo. Se o acesso ainda não aparecer no mesmo dia, ele deve ser restaurado pelo job de sincronização de governança."
+    });
+  } else {
+    blocks.push({
+      title: "Sem vínculo criado",
+      text: "Registramos sua recusa. Nenhum vínculo de conselheiro será criado automaticamente e nenhum acesso adicional será concedido por este fluxo."
+    });
+  }
+
+  return {
+    moduleName: "MEMBROS",
+    templateKey: "GEAPA_CLASSICO",
+    correlationKey: GEAPA_CORE.coreMailBuildCorrelationKey("MEM", {
+      businessId: String(new Date().getFullYear()) + "-" + members_onlyDigitsCompat_(ctx.rga) + "-" + responseToken,
+      flowCode: "GOV",
+      stage: accepted ? "CONSOK" : "CONSREC"
+    }),
+    entityType: "CONSELHEIRO",
+    entityId: ctx.rga,
+    flowCode: "GOV",
+    stage: accepted ? "CONSOK" : "CONSREC",
+    to: String(ctx.email || "").trim(),
+    cc: "",
+    bcc: "",
+    subjectHuman: subject,
+    payload: {
+      title: subject,
+      subtitle: "Conselho consultivo do GEAPA",
+      introText: accepted
+        ? "Sua adesão ao conselho consultivo do GEAPA foi registrada com sucesso."
+        : "Registramos sua resposta ao convite para o conselho consultivo do GEAPA.",
+      blocks: blocks
+    },
+    priority: "NORMAL",
+    sendAfter: "",
+    metadata: {
+      rga: ctx.rga,
+      responseKey: ctx.responseKey,
+      accepted: accepted,
+      notificationType: accepted ? "COUNCILOR_ACCEPTED_CONFIRMATION" : "COUNCILOR_REFUSED_CONFIRMATION"
+    }
+  };
+}
+
+/**
+ * Gera um token curto e estavel para a correlacao da resposta de conselheiro.
+ *
+ * @param {*} responseKey
+ * @return {string}
+ */
+function members_buildGovernanceCouncilorDecisionCorrelationToken_(responseKey) {
+  var raw = String(responseKey || "").trim();
+  var timestamp = raw.split("|")[0] || "";
+  var compactTimestamp = timestamp.replace(/\D/g, "").slice(-8);
+  return "RC" + (compactTimestamp || members_shortGovernanceHash_(raw, 8));
+}
+
+/**
+ * Gera um hash curto deterministico para identificadores operacionais.
+ *
+ * @param {*} value
+ * @param {number=} length
+ * @return {string}
+ */
+function members_shortGovernanceHash_(value, length) {
+  var text = String(value || "");
+  var hash = 0;
+
+  for (var i = 0; i < text.length; i++) {
+    hash = ((hash << 5) - hash) + text.charCodeAt(i);
+    hash |= 0;
+  }
+
+  return Math.abs(hash).toString(36).toUpperCase().slice(0, Math.max(1, Number(length || 8)));
 }
 
 /**
@@ -3058,13 +3386,17 @@ function members_buildGovernanceCouncilorResponseKey_(record) {
  */
 function members_isGovernanceCouncilorAccepted_(value) {
   var normalized = members_normalizeGovernanceText_(value);
+  if (!normalized || members_isGovernanceNo_(normalized)) return false;
+  if (normalized.indexOf("nao") === 0 || normalized.indexOf("recus") >= 0) return false;
+
   return normalized === "sim" ||
     normalized === "aceito" ||
     normalized === "aceitar" ||
     normalized === "quero aderir" ||
     normalized === "aceito aderir" ||
     normalized.indexOf("sim") === 0 ||
-    normalized.indexOf("aceit") >= 0;
+    normalized.indexOf("aceito") >= 0 ||
+    normalized.indexOf("aceitar") >= 0;
 }
 
 /**
@@ -3117,20 +3449,21 @@ function members_hasEquivalentCouncilorRecord_(payload, records) {
  * Resolve a data final padrao do vinculo de conselheiro.
  *
  * @param {Date} startDate
- * @param {Array<Object>} boards
+ * @param {Array<Object>} semesterWindows
  * @return {?Date}
  */
-function members_resolveGovernanceCouncilorEndDate_(startDate, boards) {
+function members_resolveGovernanceCouncilorEndDate_(startDate, semesterWindows) {
   var start = members_toGovernanceDate_(startDate);
   if (!start) return null;
 
-  for (var i = 0; i < (boards || []).length; i++) {
-    if ((boards[i].start.getTime() > start.getTime()) || (boards[i].start.getTime() === start.getTime())) {
-      return boards[i].end;
+  for (var i = 0; i < (semesterWindows || []).length; i++) {
+    var current = semesterWindows[i];
+    if (current.start.getTime() <= start.getTime() && current.end.getTime() >= start.getTime()) {
+      return current.end;
     }
   }
 
-  return members_addGovernanceDays_(start, 364);
+  return members_addGovernanceDays_(members_addGovernanceMonths_(start, 6), -1);
 }
 
 /**
@@ -3167,8 +3500,8 @@ function members_processCouncilorAdhesions_impl_() {
     var responses = members_readRecordsByKey_(SETTINGS.governance.forms.councilorResponsesKey, {
       skipBlankRows: true
     });
-    var outgoing = members_findGovernanceOutgoingDirectors_();
-    var boards = members_readGovernanceBoardWindows_();
+    var outgoing = members_findGovernanceOutgoingDirectors_({ includeRecentlyEnded: true });
+    var semesterWindows = members_readGovernanceSemesterWindows_();
     var cargoCatalog = members_readGovernanceCargoCatalog_();
     var councilorCargo = members_findGovernanceCouncilorCargo_(cargoCatalog);
     var councilorSheet = members_sheetByKey_(SETTINGS.vigenciaKeys.conselheiros);
@@ -3184,7 +3517,8 @@ function members_processCouncilorAdhesions_impl_() {
       processed: 0,
       skipped: 0,
       accepted: 0,
-      refused: 0
+      refused: 0,
+      emailsQueued: 0
     };
 
     responses.forEach(function(record) {
@@ -3218,6 +3552,14 @@ function members_processCouncilorAdhesions_impl_() {
       );
 
       if (!accepted) {
+        if (members_queueGovernanceCouncilorDecisionEmail_({
+          responseKey: responseKey,
+          accepted: false,
+          match: match,
+          payload: null
+        })) {
+          summary.emailsQueued += 1;
+        }
         members_setGovernanceProcessingState_(
           SETTINGS.governance.properties.councilorResponsePrefix,
           responseKey,
@@ -3240,7 +3582,7 @@ function members_processCouncilorAdhesions_impl_() {
         roleName: councilorCargo ? councilorCargo.nomePublico : SETTINGS.governance.values.cargoConselheiroNome,
         boardId: "",
         startDate: startDate,
-        endDate: members_resolveGovernanceCouncilorEndDate_(startDate, boards),
+        endDate: members_resolveGovernanceCouncilorEndDate_(startDate, semesterWindows),
         endDatePredicted: ""
       };
 
@@ -3259,6 +3601,15 @@ function members_processCouncilorAdhesions_impl_() {
             "Data_Fim": payload.endDate
           });
         }
+      }
+
+      if (members_queueGovernanceCouncilorDecisionEmail_({
+        responseKey: responseKey,
+        accepted: true,
+        match: match,
+        payload: payload
+      })) {
+        summary.emailsQueued += 1;
       }
 
       members_setGovernanceProcessingState_(
@@ -3289,12 +3640,232 @@ function members_processCouncilorAdhesions_impl_() {
 }
 
 /**
+ * Enfileira a devolutiva individual sobre a resposta de adesao ao conselho.
+ *
+ * @param {Object} ctx
+ * @return {?Object}
+ */
+function members_queueGovernanceCouncilorDecisionEmail_(ctx) {
+  var match = ctx && ctx.match ? ctx.match : null;
+  var record = match && match.record ? match.record : {};
+  var payload = ctx && ctx.payload ? ctx.payload : {};
+  var email = members_normalizeEmailCompat_(payload.email || record["E-mail"] || record["Email"] || record["EMAIL"]);
+  if (!email) return null;
+
+  return members_queueGovernanceOutgoing_(
+    members_buildGovernanceCouncilorDecisionOutgoingContract_({
+      responseKey: String(ctx && ctx.responseKey ? ctx.responseKey : "").trim(),
+      accepted: ctx && ctx.accepted === true,
+      name: payload.name || String(record["Nome"] || record["Membro"] || "").trim(),
+      rga: payload.rga || members_onlyDigitsCompat_(record["RGA"]),
+      email: email,
+      roleName: payload.roleName || SETTINGS.governance.values.cargoConselheiroNome,
+      startDate: payload.startDate || (match && match.effectiveEnd ? members_addGovernanceDays_(match.effectiveEnd, 1) : ""),
+      endDate: payload.endDate || ""
+    })
+  );
+}
+
+/**
+ * Repara registros de conselheiros a partir das respostas oficiais do formulario.
+ *
+ * Use quando um alias de decisao ou regra de vigencia tiver sido corrigido apos
+ * respostas ja processadas: remove vinculos criados para recusas, cria aceites
+ * faltantes e ajusta Data_Fim para a janela semestral vigente.
+ *
+ * @return {Object}
+ */
+function members_repairCouncilorAdhesionsFromResponses() {
+  members_assertCore_();
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+
+  try {
+    var responses = members_readRecordsByKey_(SETTINGS.governance.forms.councilorResponsesKey, {
+      skipBlankRows: true
+    });
+    var outgoing = members_findGovernanceOutgoingDirectors_({ includeRecentlyEnded: true });
+    var semesterWindows = members_readGovernanceSemesterWindows_();
+    var cargoCatalog = members_readGovernanceCargoCatalog_();
+    var councilorCargo = members_findGovernanceCouncilorCargo_(cargoCatalog);
+    var councilorSheet = members_sheetByKey_(SETTINGS.vigenciaKeys.conselheiros);
+    var headers = councilorSheet
+      ? councilorSheet.getRange(1, 1, 1, councilorSheet.getLastColumn()).getValues()[0].map(function(item) { return String(item || "").trim(); })
+      : [];
+    var headerMap = members_buildHeaderMapCompat_(headers, { normalize: true, oneBased: false });
+    var lastRow = councilorSheet ? councilorSheet.getLastRow() : 0;
+    var rows = lastRow > 1
+      ? councilorSheet.getRange(2, 1, lastRow - 1, headers.length).getValues()
+      : [];
+    var endIndex = members_findHeaderIndexByAliases_(headerMap, ["Data_Fim", "Data Fim", "Fim"], { notFoundValue: -1 });
+    var summary = {
+      ok: true,
+      scanned: responses.length,
+      created: 0,
+      correctedEndDate: 0,
+      removedRefusals: 0,
+      emailsQueued: 0,
+      skipped: 0,
+      dryRun: members_isOperationalDryRun_()
+    };
+    var rowsToDelete = [];
+    var rowsToDeleteSeen = {};
+
+    responses.forEach(function(record) {
+      var responseKey = members_buildGovernanceCouncilorResponseKey_(record);
+      var match = members_findGovernanceOutgoingDirectorByResponse_(record, outgoing);
+      if (!responseKey || !match) {
+        summary.skipped += 1;
+        return;
+      }
+
+      var startDate = members_addGovernanceDays_(match.effectiveEnd, 1);
+      var payload = {
+        name: String(match.record["Nome"] || match.record["Membro"] || "").trim(),
+        rga: members_onlyDigitsCompat_(match.record["RGA"]),
+        email: members_normalizeEmailCompat_(match.record["E-mail"] || match.record["Email"] || match.record["EMAIL"]),
+        roleName: councilorCargo ? councilorCargo.nomePublico : SETTINGS.governance.values.cargoConselheiroNome,
+        boardId: "",
+        startDate: startDate,
+        endDate: members_resolveGovernanceCouncilorEndDate_(startDate, semesterWindows),
+        endDatePredicted: ""
+      };
+      var rowInfo = members_findGovernanceCouncilorSheetRow_(rows, headers, payload);
+      var accepted = members_isGovernanceCouncilorAccepted_(
+        members_getGovernanceFormValue_(record, MEMBERS_GOVERNANCE_FORM_ALIASES.councilor.decision)
+      );
+
+      if (!accepted) {
+        if (members_queueGovernanceCouncilorDecisionEmail_({
+          responseKey: responseKey,
+          accepted: false,
+          match: match,
+          payload: null
+        })) {
+          summary.emailsQueued += 1;
+        }
+        if (rowInfo && !rowsToDeleteSeen[rowInfo.rowNumber]) {
+          rowsToDelete.push(rowInfo.rowNumber);
+          rowsToDeleteSeen[rowInfo.rowNumber] = true;
+          members_setGovernanceProcessingState_(
+            SETTINGS.governance.properties.councilorResponsePrefix,
+            responseKey,
+            SETTINGS.governance.states.refused
+          );
+          summary.removedRefusals += 1;
+        }
+        return;
+      }
+
+      if (!rowInfo) {
+        if (!summary.dryRun) {
+          councilorSheet.getRange(councilorSheet.getLastRow() + 1, 1, 1, headers.length)
+            .setValues([members_buildGovernanceOfficialRow_(headers, payload)]);
+        }
+        members_setGovernanceProcessingState_(
+          SETTINGS.governance.properties.councilorResponsePrefix,
+          responseKey,
+          SETTINGS.governance.states.accepted
+        );
+        if (members_queueGovernanceCouncilorDecisionEmail_({
+          responseKey: responseKey,
+          accepted: true,
+          match: match,
+          payload: payload
+        })) {
+          summary.emailsQueued += 1;
+        }
+        summary.created += 1;
+        return;
+      }
+
+      if (endIndex >= 0) {
+        var currentEnd = members_toGovernanceDate_(rowInfo.row[endIndex]);
+        var expectedEnd = members_toGovernanceDate_(payload.endDate);
+        if (expectedEnd && (!currentEnd || currentEnd.getTime() !== expectedEnd.getTime())) {
+          if (!summary.dryRun) {
+            councilorSheet.getRange(rowInfo.rowNumber, endIndex + 1).setValue(expectedEnd);
+          }
+          summary.correctedEndDate += 1;
+        }
+      }
+
+      members_setGovernanceProcessingState_(
+        SETTINGS.governance.properties.councilorResponsePrefix,
+        responseKey,
+        SETTINGS.governance.states.accepted
+      );
+      if (members_queueGovernanceCouncilorDecisionEmail_({
+        responseKey: responseKey,
+        accepted: true,
+        match: match,
+        payload: payload
+      })) {
+        summary.emailsQueued += 1;
+      }
+    });
+
+    rowsToDelete.sort(function(a, b) { return b - a; }).forEach(function(rowNumber) {
+      if (!summary.dryRun) {
+        councilorSheet.deleteRow(rowNumber);
+      }
+    });
+
+    if (!summary.dryRun && (summary.created || summary.correctedEndDate || summary.removedRefusals)) {
+      members_refreshGovernanceArtifacts_();
+    }
+
+    members_logGovernanceEvent_("COUNCILOR_ADHESIONS_REPAIRED", summary);
+    return summary;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Encontra uma linha de conselheiro equivalente na aba oficial.
+ *
+ * @param {Array<Array<*>>} rows
+ * @param {Array<string>} headers
+ * @param {Object} payload
+ * @return {?Object}
+ */
+function members_findGovernanceCouncilorSheetRow_(rows, headers, payload) {
+  var headerMap = members_buildHeaderMapCompat_(headers || [], { normalize: true, oneBased: false });
+  var rgaIndex = members_findHeaderIndexByAliases_(headerMap, ["RGA"], { notFoundValue: -1 });
+  var startIndex = members_findHeaderIndexByAliases_(headerMap, ["Data_In\u00edcio", "Data_Inicio", "Data Inicio"], { notFoundValue: -1 });
+  var roleIndex = members_getGovernanceOccupationHeaderIndex_(headerMap);
+  var targetRga = members_onlyDigitsCompat_(payload && payload.rga);
+  var targetStart = members_toGovernanceDate_(payload && payload.startDate);
+  var targetRole = members_normalizeGovernanceText_(payload && payload.roleName);
+
+  for (var i = 0; i < (rows || []).length; i++) {
+    var row = rows[i] || [];
+    var sameRga = rgaIndex >= 0 && members_onlyDigitsCompat_(row[rgaIndex]) === targetRga;
+    var rowStart = startIndex >= 0 ? members_toGovernanceDate_(row[startIndex]) : null;
+    var sameStart = targetStart && rowStart && targetStart.getTime() === rowStart.getTime();
+    var sameRole = roleIndex < 0 || members_normalizeGovernanceText_(row[roleIndex]) === targetRole;
+
+    if (sameRga && sameStart && sameRole) {
+      return {
+        rowNumber: i + 2,
+        row: row
+      };
+    }
+  }
+
+  return null;
+}
+
+/**
  * Coleta os emails de configuracao que nunca devem ser removidos das pastas.
  *
  * @return {string[]}
  */
 function members_collectGovernanceProtectedEmails_() {
   var keys = [
+    SETTINGS.courseConfigKey,
     SETTINGS.governance.configKeys.mailConfig,
     SETTINGS.governance.configKeys.communicationsConfig
   ];
@@ -3318,6 +3889,51 @@ function members_collectGovernanceProtectedEmails_() {
       });
     });
   });
+
+  return members_uniqueEmailsCompat_(emails);
+}
+
+/**
+ * Coleta emails que devem ser protegidos em um item especifico do Drive.
+ *
+ * O proprietario do item e o usuario efetivo do script nunca devem ser
+ * removidos pela reconciliacao, mesmo que nao estejam nas configuracoes
+ * administrativas lidas das planilhas.
+ *
+ * @param {GoogleAppsScript.Drive.File|GoogleAppsScript.Drive.Folder} item
+ * @return {string[]}
+ */
+function members_collectGovernanceDriveItemProtectedEmails_(item) {
+  var emails = [];
+
+  try {
+    var effectiveUser = Session.getEffectiveUser();
+    if (effectiveUser && typeof effectiveUser.getEmail === "function") {
+      emails.push(members_normalizeEmailCompat_(effectiveUser.getEmail()));
+    }
+  } catch (err) {
+    // Sem acao: alguns contextos podem ocultar o usuario efetivo.
+  }
+
+  try {
+    var activeUser = Session.getActiveUser();
+    if (activeUser && typeof activeUser.getEmail === "function") {
+      emails.push(members_normalizeEmailCompat_(activeUser.getEmail()));
+    }
+  } catch (err2) {
+    // Sem acao: usuarios ativos podem nao estar disponiveis em triggers.
+  }
+
+  try {
+    if (item && typeof item.getOwner === "function") {
+      var owner = item.getOwner();
+      if (owner && typeof owner.getEmail === "function") {
+        emails.push(members_normalizeEmailCompat_(owner.getEmail()));
+      }
+    }
+  } catch (err3) {
+    // Sem acao: itens em Drive compartilhado ou atalhos podem nao expor owner.
+  }
 
   return members_uniqueEmailsCompat_(emails);
 }
@@ -3651,7 +4267,9 @@ function members_syncGovernanceFolderRole_(folder, role, desiredEmails, protecte
   var currentRead = members_listGovernanceFolderEmails_(folder, role);
   var current = currentRead.emails || [];
   var desired = members_uniqueEmailsCompat_(desiredEmails || []);
-  var protectedSet = members_uniqueEmailsCompat_(protectedEmails || []);
+  var protectedSet = members_uniqueEmailsCompat_(
+    (protectedEmails || []).concat(members_collectGovernanceDriveItemProtectedEmails_(folder))
+  );
   var added = [];
   var removed = [];
   var errors = [];
@@ -3812,6 +4430,251 @@ function members_syncGovernanceTransitionShortcutTargets_(transitionFolder, desi
 }
 
 /**
+ * Lista pastas, arquivos e destinos de atalhos contidos na pasta Administrativo.
+ *
+ * A pasta Administrativo pode conter subpastas, arquivos diretos e atalhos para
+ * acervos operacionais. Esta varredura monta o conjunto que deve receber a
+ * mesma reconciliação de editor da diretoria vigente.
+ *
+ * @param {GoogleAppsScript.Drive.Folder} rootFolder
+ * @return {Object}
+ */
+function members_listGovernanceAdministrativeContainedItems_(rootFolder) {
+  var maxItems = 500;
+  var summary = {
+    ok: true,
+    scanned: 0,
+    resolvedShortcuts: 0,
+    skipped: 0,
+    limitReached: false,
+    warnings: [],
+    errors: [],
+    items: []
+  };
+  var seenItems = {};
+  var scannedFolders = {};
+
+  function getItemId_(item) {
+    try {
+      return typeof item.getId === "function" ? String(item.getId() || "").trim() : "";
+    } catch (err) {
+      return "";
+    }
+  }
+
+  function getItemName_(item) {
+    try {
+      return typeof item.getName === "function" ? String(item.getName() || "").trim() : "";
+    } catch (err) {
+      return "";
+    }
+  }
+
+  function addItem_(item, type, path, sourceShortcutName) {
+    if (!item || summary.items.length >= maxItems) {
+      summary.limitReached = summary.items.length >= maxItems;
+      return false;
+    }
+
+    var id = getItemId_(item);
+    var key = (type || "item") + ":" + (id || path || getItemName_(item));
+    if (seenItems[key]) return false;
+
+    seenItems[key] = true;
+    summary.items.push({
+      id: id,
+      name: getItemName_(item),
+      type: type || "item",
+      path: path || "",
+      sourceShortcutName: sourceShortcutName || "",
+      item: item
+    });
+    return true;
+  }
+
+  function resolveShortcutTarget_(file, path) {
+    var name = getItemName_(file);
+    var targetId = "";
+    var targetMimeType = "";
+
+    try {
+      targetId = typeof file.getTargetId === "function" ? String(file.getTargetId() || "").trim() : "";
+      targetMimeType = typeof file.getTargetMimeType === "function" ? String(file.getTargetMimeType() || "").trim() : "";
+    } catch (err) {
+      summary.skipped += 1;
+      summary.warnings.push({
+        item: name,
+        reason: "shortcut_target_unavailable",
+        error: String(err && err.message ? err.message : err)
+      });
+      return;
+    }
+
+    if (!targetId) {
+      summary.skipped += 1;
+      summary.warnings.push({ item: name, reason: "shortcut_without_target_id" });
+      return;
+    }
+
+    try {
+      if (targetMimeType === "application/vnd.google-apps.folder") {
+        var targetFolder = DriveApp.getFolderById(targetId);
+        summary.resolvedShortcuts += 1;
+        addItem_(targetFolder, "shortcut_target_folder", path + " > " + getItemName_(targetFolder), name);
+        scanFolder_(targetFolder, path + " > " + getItemName_(targetFolder));
+      } else {
+        var targetFile = DriveApp.getFileById(targetId);
+        summary.resolvedShortcuts += 1;
+        addItem_(targetFile, "shortcut_target_file", path + " > " + getItemName_(targetFile), name);
+      }
+    } catch (err) {
+      var diagnosis = members_describeGovernanceDriveError_("", err);
+      summary.skipped += 1;
+      summary.warnings.push({
+        item: name,
+        targetId: targetId,
+        reason: "shortcut_target_unavailable",
+        error: diagnosis.error,
+        likelyCause: diagnosis.likelyCause
+      });
+    }
+  }
+
+  function scanFolder_(folder, path) {
+    if (!folder || summary.items.length >= maxItems) {
+      summary.limitReached = summary.items.length >= maxItems;
+      return;
+    }
+
+    var folderId = getItemId_(folder);
+    if (folderId && scannedFolders[folderId]) return;
+    if (folderId) scannedFolders[folderId] = true;
+
+    try {
+      var folders = folder.getFolders();
+      while (folders.hasNext()) {
+        if (summary.items.length >= maxItems) {
+          summary.limitReached = true;
+          return;
+        }
+
+        var childFolder = folders.next();
+        var childPath = path + "/" + getItemName_(childFolder);
+        summary.scanned += 1;
+        addItem_(childFolder, "folder", childPath, "");
+        scanFolder_(childFolder, childPath);
+      }
+
+      var files = folder.getFiles();
+      while (files.hasNext()) {
+        if (summary.items.length >= maxItems) {
+          summary.limitReached = true;
+          return;
+        }
+
+        var file = files.next();
+        var filePath = path + "/" + getItemName_(file);
+        var mimeType = "";
+        summary.scanned += 1;
+        addItem_(file, "file", filePath, "");
+
+        try {
+          mimeType = typeof file.getMimeType === "function" ? String(file.getMimeType() || "").trim() : "";
+        } catch (mimeErr) {
+          summary.warnings.push({
+            item: getItemName_(file),
+            reason: "mime_type_unavailable",
+            error: String(mimeErr && mimeErr.message ? mimeErr.message : mimeErr)
+          });
+          continue;
+        }
+
+        if (mimeType === "application/vnd.google-apps.shortcut") {
+          resolveShortcutTarget_(file, filePath);
+        }
+      }
+    } catch (err) {
+      var diagnosis = members_describeGovernanceDriveError_("", err);
+      summary.ok = false;
+      summary.errors.push({
+        folder: getItemName_(folder),
+        reason: "administrative_folder_scan_error",
+        error: diagnosis.error,
+        likelyCause: diagnosis.likelyCause
+      });
+    }
+  }
+
+  if (!rootFolder) {
+    summary.ok = false;
+    summary.errors.push({ reason: "missing_administrative_folder" });
+    return summary;
+  }
+
+  scanFolder_(rootFolder, rootFolder.getName());
+
+  if (summary.warnings.length || summary.errors.length || summary.limitReached) {
+    members_logGovernanceEvent_("DRIVE_ADMINISTRATIVE_CONTENTS_SCAN", {
+      scanned: summary.scanned,
+      items: summary.items.length,
+      resolvedShortcuts: summary.resolvedShortcuts,
+      skipped: summary.skipped,
+      limitReached: summary.limitReached,
+      warnings: summary.warnings.length,
+      errors: summary.errors.length
+    });
+  }
+
+  return summary;
+}
+
+/**
+ * Sincroniza editores nos itens internos da pasta Administrativo.
+ *
+ * Diretores vigentes devem manter acesso de editor aos materiais internos da
+ * pasta Administrativo, inclusive quando algum item tiver compartilhamento
+ * especifico ou quando houver atalhos para pastas/arquivos operacionais.
+ *
+ * @param {GoogleAppsScript.Drive.Folder} administrativeFolder
+ * @param {string[]} desiredEditors
+ * @param {string[]} protectedEmails
+ * @return {Object}
+ */
+function members_syncGovernanceAdministrativeContents_(administrativeFolder, desiredEditors, protectedEmails) {
+  var discovery = members_listGovernanceAdministrativeContainedItems_(administrativeFolder);
+  var editors = members_uniqueEmailsCompat_(desiredEditors || []);
+  var summary = {
+    ok: discovery.ok !== false,
+    scanned: discovery.scanned,
+    items: discovery.items.length,
+    resolvedShortcuts: discovery.resolvedShortcuts,
+    skipped: discovery.skipped,
+    limitReached: discovery.limitReached,
+    warnings: discovery.warnings,
+    errors: discovery.errors,
+    synced: []
+  };
+
+  discovery.items.forEach(function(entry) {
+    summary.synced.push({
+      id: entry.id,
+      name: entry.name,
+      type: entry.type,
+      path: entry.path,
+      sourceShortcutName: entry.sourceShortcutName,
+      editors: members_syncGovernanceFolderRole_(
+        entry.item,
+        "editor",
+        editors,
+        protectedEmails
+      )
+    });
+  });
+
+  return summary;
+}
+
+/**
  * Sincroniza as permissoes das pastas Administrativo e Transicao/Conselheiros.
  *
  * @return {Object}
@@ -3855,6 +4718,7 @@ function members_syncGovernanceDriveAccess_impl_() {
   var summary = {
     ok: true,
     administrativo: null,
+    administrativoContents: null,
     transicao: null,
     transitionTargets: null
   };
@@ -3874,6 +4738,12 @@ function members_syncGovernanceDriveAccess_impl_() {
         administrativoProtectedEmails
       )
     };
+
+    summary.administrativoContents = members_syncGovernanceAdministrativeContents_(
+      administrativo,
+      administrativeEditors,
+      administrativoProtectedEmails
+    );
   }
 
   if (transicao) {

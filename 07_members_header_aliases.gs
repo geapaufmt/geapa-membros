@@ -62,7 +62,7 @@ const MEMBERS_HEADER_ALIASES = Object.freeze({
     diretoriaLimitBalanceDays: Object.freeze(["SALDO_DIAS_DIRETORIA"]),
     diretoriaEligibilityStatus: Object.freeze(["STATUS_ELEGIBILIDADE_DIRETORIA"]),
     diretoriaEstimatedLimitDate: Object.freeze(["DATA_LIMITE_ESTIMADA_DIRETORIA"]),
-    currentRole: Object.freeze(["Cargo/função atual", "Cargo/funcao atual", "CARGO_FUNCAO_ATUAL"]),
+    currentRole: Object.freeze(["Cargo/função atual", "Cargo/funcao atual", "CARGO_FUNCAO_ATUAL", "OCUPACAO_ATUAL", "Ocupacao atual", "Ocupação atual"]),
     sex: Object.freeze(["Sexo", "SEXO"]),
     suspended: Object.freeze(["Já foi suspenso?", "Ja foi suspenso?", "FLAG_JA_FOI_SUSPENSO"]),
     status: Object.freeze(["Status", "STATUS_CADASTRAL"])
@@ -94,7 +94,22 @@ const MEMBERS_HEADER_ALIASES = Object.freeze({
     reason: Object.freeze(["Motivo", "MOTIVO_DESLIGAMENTO"]),
     wasDirector: Object.freeze(["Foi membro da diretoria?", "FLAG_FOI_MEMBRO_DIRETORIA"]),
     internalNote: Object.freeze(["Observação interna", "Observacao interna", "OBSERVACAO_INTERNA"]),
-    status: Object.freeze(["Status", "STATUS_REGISTRO"])
+    status: Object.freeze(["Status", "STATUS_REGISTRO"]),
+    receivesCommunications: Object.freeze(["RECEBE_COMUNICACOES_GEAPA"]),
+    communicationStatus: Object.freeze(["STATUS_COMUNICACAO"]),
+    axesOfInterest: Object.freeze(["EIXOS_INTERESSE"]),
+    authorizationAt: Object.freeze(["DATA_AUTORIZACAO_COMUNICACAO"]),
+    authorizationOrigin: Object.freeze(["ORIGEM_AUTORIZACAO"]),
+    unsubscribedAt: Object.freeze(["DATA_DESCADASTRAMENTO"]),
+    communicationNotes: Object.freeze(["OBS_COMUNICACAO"]),
+    interestAxisI: Object.freeze(["INTERESSE_EIXO_I"]),
+    interestAxisII: Object.freeze(["INTERESSE_EIXO_II"]),
+    interestAxisIII: Object.freeze(["INTERESSE_EIXO_III"]),
+    interestAxisIV: Object.freeze(["INTERESSE_EIXO_IV"]),
+    interestAxisV: Object.freeze(["INTERESSE_EIXO_V"]),
+    interestAxisVI: Object.freeze(["INTERESSE_EIXO_VI"]),
+    interestAxisVII: Object.freeze(["INTERESSE_EIXO_VII"]),
+    interestAxisVIII: Object.freeze(["INTERESSE_EIXO_VIII"])
   }),
   lifecycleEvent: Object.freeze({
     eventId: Object.freeze(["ID_EVENTO_MEMBRO", "ID_EVENTO", "EVENT_ID"]),

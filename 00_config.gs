@@ -67,6 +67,7 @@ const SETTINGS = Object.freeze({
 
   offboarding: Object.freeze({
     requestType: "Desligamento",
+    suspensionQueueKey: "OFFBOARD_QUEUE_SUSPENSIONS",
     immediate: "Imediatamente",
     approved: "DEFERIDO",
     yes: "SIM",
@@ -75,6 +76,136 @@ const SETTINGS = Object.freeze({
     dismissalByAbsenceEmail: Object.freeze({
       subject: "Desligamento homologado por limite de faltas no GEAPA",
       templateKey: "GEAPA_CLASSICO"
+    })
+  }),
+
+  exMembersCommunication: Object.freeze({
+    headers: Object.freeze({
+      receivesCommunications: "RECEBE_COMUNICACOES_GEAPA",
+      communicationStatus: "STATUS_COMUNICACAO",
+      axesOfInterest: "EIXOS_INTERESSE",
+      authorizationAt: "DATA_AUTORIZACAO_COMUNICACAO",
+      authorizationOrigin: "ORIGEM_AUTORIZACAO",
+      unsubscribedAt: "DATA_DESCADASTRAMENTO",
+      communicationNotes: "OBS_COMUNICACAO"
+    }),
+    values: Object.freeze({
+      yes: "SIM",
+      no: "NAO",
+      active: "ATIVO",
+      notAuthorized: "NAO_AUTORIZADO",
+      unsubscribed: "DESCADASTRADO",
+      authorizationOrigin: "FORMULARIO_DESLIGAMENTO"
+    }),
+    axes: Object.freeze([
+      Object.freeze({
+        code: "I",
+        column: "INTERESSE_EIXO_I",
+        officialName: "Solos e nutricao de plantas",
+        aliases: Object.freeze([
+          "I",
+          "1",
+          "Solos e nutricao de plantas",
+          "Solos e nutrição de plantas"
+        ])
+      }),
+      Object.freeze({
+        code: "II",
+        column: "INTERESSE_EIXO_II",
+        officialName: "Fitotecnia e manejo de culturas",
+        aliases: Object.freeze([
+          "II",
+          "2",
+          "Fitotecnia e manejo de culturas"
+        ])
+      }),
+      Object.freeze({
+        code: "III",
+        column: "INTERESSE_EIXO_III",
+        officialName: "Defesa vegetal (fitossanidade)",
+        aliases: Object.freeze([
+          "III",
+          "3",
+          "Defesa vegetal",
+          "Defesa vegetal (fitossanidade)",
+          "Fitossanidade"
+        ])
+      }),
+      Object.freeze({
+        code: "IV",
+        column: "INTERESSE_EIXO_IV",
+        officialName: "Maquinas, tecnologias e agricultura de precisao",
+        aliases: Object.freeze([
+          "IV",
+          "4",
+          "Maquinas, tecnologias e agricultura de precisao",
+          "Máquinas, tecnologias e agricultura de precisão",
+          "Agricultura de precisao",
+          "Agricultura de precisão"
+        ])
+      }),
+      Object.freeze({
+        code: "V",
+        column: "INTERESSE_EIXO_V",
+        officialName: "Agroecologia e sistemas sustentaveis de producao",
+        aliases: Object.freeze([
+          "V",
+          "5",
+          "Agroecologia e sistemas sustentaveis de producao",
+          "Agroecologia e sistemas sustentáveis de produção",
+          "Agroecologia"
+        ])
+      }),
+      Object.freeze({
+        code: "VI",
+        column: "INTERESSE_EIXO_VI",
+        officialName: "Extensao rural, associativismo e politicas publicas",
+        aliases: Object.freeze([
+          "VI",
+          "6",
+          "Extensao rural, associativismo e politicas publicas",
+          "Extensão rural, associativismo e políticas públicas",
+          "Extensao rural",
+          "Extensão rural"
+        ])
+      }),
+      Object.freeze({
+        code: "VII",
+        column: "INTERESSE_EIXO_VII",
+        officialName: "Inovacao, empreendedorismo e mercado agricola",
+        aliases: Object.freeze([
+          "VII",
+          "7",
+          "Inovacao, empreendedorismo e mercado agricola",
+          "Inovação, empreendedorismo e mercado agrícola",
+          "Empreendedorismo e mercado agricola",
+          "Empreendedorismo e mercado agrícola"
+        ])
+      }),
+      Object.freeze({
+        code: "VIII",
+        column: "INTERESSE_EIXO_VIII",
+        officialName: "Temas livres de relevancia agronomica",
+        aliases: Object.freeze([
+          "VIII",
+          "8",
+          "Temas livres de relevancia agronomica",
+          "Temas livres de relevância agronômica",
+          "Temas livres"
+        ])
+      })
+    ]),
+    formFields: Object.freeze({
+      consent: Object.freeze([
+        "Voce deseja continuar recebendo avisos e emails sobre reunioes e/ou atividades do GEAPA?",
+        "Você deseja continuar recebendo avisos e emails sobre reuniões e/ou atividades do GEAPA?",
+        "Deseja continuar recebendo comunicacoes do GEAPA?",
+        "Deseja continuar recebendo comunicações do GEAPA?"
+      ]),
+      axes: Object.freeze([
+        "Quais eixos tematicos te interessam?",
+        "Quais eixos temáticos te interessam?"
+      ])
     })
   }),
 
@@ -280,7 +411,9 @@ timeoutDays: 7,
     email: Object.freeze({
       nominationSubject: "Resultado da analise de nomeacao da diretoria - GEAPA",
       nomineeConfirmedSubject: "Nomeacao confirmada para cargo da diretoria - GEAPA",
-      councilorInviteSubject: "Convite para adesao como conselheiro(a) consultivo(a) - GEAPA"
+      councilorInviteSubject: "Convite para adesão como conselheiro(a) consultivo(a) - GEAPA",
+      councilorAcceptedSubject: "Adesão ao conselho consultivo confirmada - GEAPA",
+      councilorRefusedSubject: "Registro de recusa ao conselho consultivo - GEAPA"
     }),
 
     properties: Object.freeze({

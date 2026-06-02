@@ -6,7 +6,7 @@
  *
  * Regras centrais:
  * - usa a base oficial de eixos via Registry;
- * - roteia docentes para PROFS_BASE;
+ * - roteia docentes/tecnicos para PROFS_BASE;
  * - roteia os demais perfis para PESSOAS_EXTERNAS_BASE;
  * - faz upsert por e-mail principal;
  * - preserva ids e dados preexistentes;
@@ -91,16 +91,19 @@ const MEMBERS_EXTERNAL_CONTACTS_CFG = Object.freeze({
     "INSTAGRAM",
     "DATA_NASCIMENTO",
     "SEXO",
+    "CIDADE",
+    "UF",
+    "ORIGEM_CONTATO",
     "INSTITUICAO",
-    "VINCULO_DOCENTE",
-    "DISCIPLINAS",
+    "TIPO_PROFISSIONAL",
+    "CURSO_VINCULO",
+    "VINCULO_GEAPA",
+    "CURRICULO_LATTES",
+    "DISCIPLINAS_AREAS",
     "TITULACAO",
     "FORMACAO",
     "EIXO_TEMATICO_1",
     "EIXO_TEMATICO_2",
-    "CIDADE",
-    "UF",
-    "ORIGEM_CONTATO",
     "RECEBE_COMUNICADOS_GERAIS",
     "RECEBE_REUNIOES_ABERTAS",
     "RECEBE_APRESENTACOES_ALUNOS",
@@ -118,7 +121,7 @@ const MEMBERS_EXTERNAL_CONTACTS_CFG = Object.freeze({
     INSTAGRAM: Object.freeze(["INSTAGRAM", "@ Instagram", "Instagram"]),
     DATA_NASCIMENTO: Object.freeze(["DATA_NASCIMENTO", "Data de nascimento", "Data de Nascimento"]),
     SEXO: Object.freeze(["SEXO", "Sexo"]),
-    INSTITUICAO: Object.freeze(["INSTITUICAO", "Instituicao", "Instituicao em que atua como Docente"]),
+    INSTITUICAO: Object.freeze(["INSTITUICAO", "Instituicao", "Instituicao em que atua", "Instituicao em que atua como Docente"]),
     CIDADE: Object.freeze(["CIDADE", "Cidade"]),
     UF: Object.freeze(["UF"]),
     ORIGEM_CONTATO: Object.freeze(["ORIGEM_CONTATO", "Origem do contato", "Como conheceu o GEAPA?"]),
@@ -156,8 +159,11 @@ const MEMBERS_EXTERNAL_CONTACTS_CFG = Object.freeze({
   }),
   professorsBaseHeaderAliases: Object.freeze({
     ID_PROFESSOR: Object.freeze(["ID_PROFESSOR"]),
-    VINCULO_DOCENTE: Object.freeze(["VINCULO_DOCENTE", "Vinculo docente", "Qual e seu vinculo docente principal?"]),
-    DISCIPLINAS: Object.freeze(["DISCIPLINAS", "Disciplinas"]),
+    TIPO_PROFISSIONAL: Object.freeze(["TIPO_PROFISSIONAL", "Tipo profissional", "Perfil profissional"]),
+    CURSO_VINCULO: Object.freeze(["CURSO_VINCULO", "Curso de vinculo", "Qual e seu curso de vinculo principal?"]),
+    VINCULO_GEAPA: Object.freeze(["VINCULO_GEAPA", "Vinculo GEAPA"]),
+    CURRICULO_LATTES: Object.freeze(["CURRICULO_LATTES", "Curriculo Lattes", "Link Curriculo Lattes", "Caso deseje, insira aqui o link para seu curriculo Lattes:"]),
+    DISCIPLINAS_AREAS: Object.freeze(["DISCIPLINAS_AREAS", "DISCIPLINAS", "Disciplinas", "Disciplinas/Areas que leciona ou com as quais possui maior vinculo"]),
     TITULACAO: Object.freeze(["TITULACAO", "Titulacao"]),
     FORMACAO: Object.freeze(["FORMACAO", "Formacao"]),
     EIXO_TEMATICO_1: Object.freeze(["EIXO_TEMATICO_1", "Eixo tematico 1", "Eixo tematico principal", "Eixo tematico principal de interesse ou atuacao"]),
@@ -180,13 +186,15 @@ const MEMBERS_EXTERNAL_CONTACTS_CFG = Object.freeze({
     city: Object.freeze(["Cidade"]),
     uf: Object.freeze(["UF"]),
     sourceContact: Object.freeze(["Como conheceu o GEAPA?"]),
-    professorInstitution: Object.freeze(["Instituicao em que atua como Docente", "Instituição em que atua como Docente"]),
-    professorBond: Object.freeze(["Qual e seu vinculo docente principal?", "Qual é seu vínculo docente principal?"]),
-    professorDisciplines: Object.freeze(["Disciplinas que leciona ou com as quais possui maior vinculo", "Disciplinas que leciona ou com as quais possui maior vínculo"]),
+    professorInstitution: Object.freeze(["Instituicao em que atua:", "Instituicao em que atua", "Instituicao em que atua como Docente", "Instituição em que atua como Docente"]),
+    professorCourseBond: Object.freeze(["Qual e seu curso de vinculo principal?", "Qual e seu curso de vinculo principal", "Qual é seu curso de vínculo principal?"]),
+    professorBond: Object.freeze(["Qual seu vinculo?", "Qual seu vinculo", "Qual seu vínculo?", "Qual e seu vinculo docente principal?", "Qual é seu vínculo docente principal?"]),
+    professorDisciplines: Object.freeze(["Disciplinas/Areas que leciona ou com as quais possui maior vinculo:", "Disciplinas/Areas que leciona ou com as quais possui maior vinculo", "Disciplinas/Áreas que leciona ou com as quais possui maior vínculo:", "Disciplinas/Áreas que leciona ou com as quais possui maior vínculo", "Disciplinas que leciona ou com as quais possui maior vinculo", "Disciplinas que leciona ou com as quais possui maior vínculo"]),
     professorDegree: Object.freeze(["Titulacao (ex: Doutorado em Fitotecnia)", "Titulação (ex: Doutorado em Fitotecnia)"]),
     professorFormation: Object.freeze(["Formacao principal (ex: Agronomia)", "Formação principal (ex: Agronomia)"]),
     professorAxis1: Object.freeze(["Eixo tematico principal de interesse ou atuacao", "Eixo temático principal de interesse ou atuação"]),
     professorAxis2: Object.freeze(["Eixo tematico secundario de interesse ou atuacao", "Eixo temático secundário de interesse ou atuação"]),
+    professorLattes: Object.freeze(["Caso deseje, insira aqui o link para seu curriculo Lattes:", "Caso deseje, insira aqui o link para seu curriculo Lattes", "Caso deseje, insira aqui o link para seu currículo Lattes:"]),
     participantOption: Object.freeze(["Qual opcao melhor descreve voce?", "Qual opção melhor descreve você?"]),
     participantInstitution: Object.freeze(["Empresa, instituicao, orgao, laboratorio ou propriedade com que voce esta vinculado(a)", "Empresa, instituição, órgão, laboratório ou propriedade com que você está vinculado(a)"]),
     participantRole: Object.freeze(["Se possivel, descreva brevemente seu cargo, funcao ou area de atuacao profissional, tecnica ou produtiva.", "Se possível, descreva brevemente seu cargo, função ou área de atuação profissional, técnica ou produtiva."]),
@@ -204,15 +212,17 @@ const MEMBERS_EXTERNAL_CONTACTS_CFG = Object.freeze({
     authorizeMessages: Object.freeze(["Autoriza receber mensagens e comunicacoes do GEAPA pelos canais informados?", "Autoriza receber mensagens e comunicações do GEAPA pelos canais informados?"]),
     generalNotes: Object.freeze(["Observacoes gerais", "Observações gerais"])
   }),
-  docenteProfileTokens: Object.freeze(["docente", "professor", "professora"]),
+  docenteProfileTokens: Object.freeze(["docente", "professor", "professora", "tecnico", "tecnica"]),
   docenteFieldKeys: Object.freeze([
     "professorInstitution",
+    "professorCourseBond",
     "professorBond",
     "professorDisciplines",
     "professorDegree",
     "professorFormation",
     "professorAxis1",
-    "professorAxis2"
+    "professorAxis2",
+    "professorLattes"
   ]),
   idConfig: Object.freeze({
     professors: Object.freeze({
@@ -1183,8 +1193,12 @@ function members_externalContactsBuildProfessorPayload_(record, emailInfo) {
   }
 
   common.payload.INSTITUICAO = members_externalContactsGetFormValue_(record, "professorInstitution");
-  common.payload.VINCULO_DOCENTE = members_externalContactsGetFormValue_(record, "professorBond");
-  common.payload.DISCIPLINAS = members_externalContactsGetFormValue_(record, "professorDisciplines");
+  common.payload.TIPO_PROFISSIONAL = members_externalContactsResolveProfessionalType_(record);
+  common.payload.CURSO_VINCULO = members_externalContactsGetFormValue_(record, "professorCourseBond");
+  common.payload.CURRICULO_LATTES = members_externalContactsNormalizeUrlText_(
+    members_externalContactsGetFormValue_(record, "professorLattes")
+  );
+  common.payload.DISCIPLINAS_AREAS = members_externalContactsGetFormValue_(record, "professorDisciplines");
   common.payload.TITULACAO = members_externalContactsGetFormValue_(record, "professorDegree");
   common.payload.FORMACAO = members_externalContactsGetFormValue_(record, "professorFormation");
   common.payload.EIXO_TEMATICO_1 = axis1;
@@ -1199,6 +1213,8 @@ function members_externalContactsBuildProfessorPayload_(record, emailInfo) {
       [
         { label: "OBS_FORM", value: members_externalContactsGetFormValue_(record, "generalNotes") },
         { label: "PERFIL_GEAPA", value: members_externalContactsGetFormValue_(record, "geapaProfile") },
+        { label: "TIPO_PROFISSIONAL", value: common.payload.TIPO_PROFISSIONAL },
+        { label: "CURSO_VINCULO", value: common.payload.CURSO_VINCULO },
         {
           label: "DATA_NASCIMENTO_NAO_INTERPRETADA",
           value: birthDateInfo.ok ? "" : birthDateInfo.rawText
@@ -1318,6 +1334,28 @@ function members_externalContactsIsProfessorRecord_(record) {
   }
 
   return false;
+}
+
+// Classifica o contato academico para manter PROFS_BASE unico para docentes e tecnicos.
+function members_externalContactsResolveProfessionalType_(record) {
+  var signals = members_externalContactsJoinDistinct_([
+    members_externalContactsGetFormValue_(record, "geapaProfile"),
+    members_externalContactsGetFormValue_(record, "participantOption"),
+    members_externalContactsGetFormValue_(record, "participantRelation"),
+    members_externalContactsGetFormValue_(record, "participantAcademicBond"),
+    members_externalContactsGetFormValue_(record, "participantRole"),
+    members_externalContactsGetFormValue_(record, "professorBond"),
+    members_externalContactsGetFormValue_(record, "professorCourseBond")
+  ], " ");
+  var normalized = members_externalContactsNormalizeCompare_(signals);
+
+  if (/\btecnico\b/.test(normalized) || /\btecnica\b/.test(normalized)) {
+    return "TECNICO";
+  }
+  if (/\bdocente\b/.test(normalized) || /\bprofessor\b/.test(normalized) || /\bprofessora\b/.test(normalized)) {
+    return "DOCENTE";
+  }
+  return "OUTRO_ACADEMICO";
 }
 
 function members_externalContactsClassifyParticipantRecord_(record) {
@@ -1963,6 +2001,17 @@ function members_externalContactsNormalizeInstagram_(value) {
   return handle ? ("@" + handle) : String(value || "").trim();
 }
 
+// Normaliza URLs opcionais do formulario sem rejeitar textos legados ja informados.
+function members_externalContactsNormalizeUrlText_(value) {
+  var text = members_externalContactsTrimText_(value);
+  if (!text) return "";
+  if (/^https?:\/\//i.test(text)) return text;
+  if (/^www\./i.test(text) || /lattes\.cnpq\.br/i.test(text)) {
+    return "https://" + text.replace(/^\/+/, "");
+  }
+  return text;
+}
+
 function members_externalContactsNormalizeBirthDateValue_(value) {
   if (value == null || value === "") {
     return {
@@ -2274,6 +2323,15 @@ function members_externalContactsApplyContactLinksToRow_(state, rowNumber, recor
       return members_externalContactsBuildInstagramLink_(value);
     }
   );
+  members_externalContactsApplyCellLinkByHeader_(
+    state,
+    rowNumber,
+    "CURRICULO_LATTES",
+    members_externalContactsNormalizeUrlText_(record.CURRICULO_LATTES),
+    function(value) {
+      return members_externalContactsBuildUrlLink_(value);
+    }
+  );
 }
 
 function members_externalContactsApplyCellLinkByHeader_(state, rowNumber, headerName, displayText, linkBuilder) {
@@ -2320,6 +2378,12 @@ function members_externalContactsBuildPhoneLink_(phone) {
 function members_externalContactsBuildInstagramLink_(instagram) {
   var handle = members_normalizeInstagramHandle_(instagram);
   return handle ? ("https://instagram.com/" + handle) : "";
+}
+
+// Monta hyperlink para URLs gerais, principalmente o curriculo Lattes.
+function members_externalContactsBuildUrlLink_(value) {
+  var text = members_externalContactsNormalizeUrlText_(value);
+  return /^https?:\/\//i.test(text) ? text : "";
 }
 
 function members_externalContactsWriteValueToAliasFamily_(sheet, rowNumber, headers, headerMap, entityType, canonicalHeader, value) {

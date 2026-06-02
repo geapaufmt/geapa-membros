@@ -100,7 +100,22 @@ const MEMBERS_SHEET_UX = Object.freeze({
     reason: 'Motivo oficial do desligamento.',
     wasDirector: 'Indica se a pessoa passou pela diretoria.',
     internalNote: 'Observacao interna do historico.',
-    status: 'Status do registro historico.'
+    status: 'Status do registro historico.',
+    receivesCommunications: 'Indica se o ex-membro autorizou continuar recebendo comunicacoes abertas do GEAPA.',
+    communicationStatus: 'Status operacional da autorizacao de comunicacao do ex-membro.',
+    axesOfInterest: 'Lista canonica dos eixos tematicos de interesse do ex-membro em formato I; II; III.',
+    authorizationAt: 'Data e hora em que a autorizacao para comunicacoes foi registrada.',
+    authorizationOrigin: 'Origem da autorizacao de comunicacao. Valor esperado no fluxo atual: FORMULARIO_DESLIGAMENTO.',
+    unsubscribedAt: 'Data em que o ex-membro solicitou descadastramento das comunicacoes, quando houver.',
+    communicationNotes: 'Observacoes livres sobre consentimento, ajustes de eixos e descadastramento.',
+    interestAxisI: 'Flag operacional do interesse no eixo I.',
+    interestAxisII: 'Flag operacional do interesse no eixo II.',
+    interestAxisIII: 'Flag operacional do interesse no eixo III.',
+    interestAxisIV: 'Flag operacional do interesse no eixo IV.',
+    interestAxisV: 'Flag operacional do interesse no eixo V.',
+    interestAxisVI: 'Flag operacional do interesse no eixo VI.',
+    interestAxisVII: 'Flag operacional do interesse no eixo VII.',
+    interestAxisVIII: 'Flag operacional do interesse no eixo VIII.'
   }),
   lifecycleEventNotes: Object.freeze({
     'ID_EVENTO_MEMBRO': 'Identificador tecnico estavel do evento de vinculo.',
@@ -260,22 +275,26 @@ const MEMBERS_SHEET_UX = Object.freeze({
     'ATUALIZADO_EM': 'Data e hora da ultima atualizacao do registro na base final.'
   }),
   externalProfessorsNotes: Object.freeze({
-    'ID_PROFESSOR': 'Identificador tecnico estavel do cadastro docente.',
-    'NOME': 'Nome principal usado para identificar o docente na base final.',
+    'ID_PROFESSOR': 'Identificador tecnico estavel do cadastro de docentes e tecnicos.',
+    'NOME': 'Nome principal usado para identificar a pessoa na base final.',
     'EMAIL': 'Email efetivo de contato. Quando a pessoa informar email preferencial, ele passa a ser o email principal salvo na base.',
     'TELEFONE': 'Telefone ou WhatsApp principal, com hyperlink clicavel quando possivel.',
     'INSTAGRAM': 'Perfil de Instagram informado pela pessoa, com link clicavel quando houver.',
     'DATA_NASCIMENTO': 'Data de nascimento normalizada pelo importador. Formato visual sugerido: dd/MM/yyyy.',
     'SEXO': 'Sexo informado no formulario.',
-    'INSTITUICAO': 'Instituicao em que atua como docente.',
-    'VINCULO_DOCENTE': 'Vinculo docente principal informado no formulario.',
-    'DISCIPLINAS': 'Disciplinas lecionadas ou com maior vinculo.',
-    'TITULACAO': 'Titulacao principal informada pelo docente.',
-    'FORMACAO': 'Formacao principal informada pelo docente.',
+    'INSTITUICAO': 'Instituicao em que atua.',
+    'TIPO_PROFISSIONAL': 'Classificacao operacional do contato: DOCENTE, TECNICO ou OUTRO_ACADEMICO.',
+    'CURSO_VINCULO': 'Curso de vinculo principal informado no formulario, quando aplicavel.',
+    'VINCULO_GEAPA': 'Vinculo definido manualmente pela diretoria: orientador, colaborador, registro sem vinculo ativo etc.',
+    'CURRICULO_LATTES': 'Link opcional para curriculo Lattes informado no formulario.',
+    'DISCIPLINAS_AREAS': 'Disciplinas ou areas de maior vinculo informadas pela pessoa.',
+    'DISCIPLINAS': 'Coluna legada de disciplinas; use DISCIPLINAS_AREAS em novas bases.',
+    'TITULACAO': 'Titulacao principal informada.',
+    'FORMACAO': 'Formacao principal informada.',
     'EIXO_TEMATICO_1': 'Eixo tematico principal, reconciliado com a planilha oficial de eixos.',
     'EIXO_TEMATICO_2': 'Eixo tematico secundario, reconciliado com a planilha oficial de eixos.',
     'CIDADE': 'Cidade informada para contato ou referencia.',
-    'UF': 'UF informada pelo docente.',
+    'UF': 'UF informada pela pessoa.',
     'ORIGEM_CONTATO': 'Como a pessoa conheceu o GEAPA.',
     'RECEBE_COMUNICADOS_GERAIS': 'Indica se deseja receber comunicados gerais do GEAPA.',
     'RECEBE_REUNIOES_ABERTAS': 'Indica se deseja receber convites para reunioes abertas.',
@@ -294,7 +313,7 @@ const MEMBERS_SHEET_UX = Object.freeze({
   ]),
   externalProfessorsGroups: Object.freeze([
     Object.freeze({ color: '#d9ead3', headers: ['ID_PROFESSOR', 'NOME', 'EMAIL', 'TELEFONE', 'INSTAGRAM', 'DATA_NASCIMENTO', 'SEXO', 'CIDADE', 'UF'] }),
-    Object.freeze({ color: '#d0e0e3', headers: ['INSTITUICAO', 'VINCULO_DOCENTE', 'DISCIPLINAS', 'TITULACAO', 'FORMACAO', 'EIXO_TEMATICO_1', 'EIXO_TEMATICO_2', 'ORIGEM_CONTATO'] }),
+    Object.freeze({ color: '#d0e0e3', headers: ['INSTITUICAO', 'TIPO_PROFISSIONAL', 'CURSO_VINCULO', 'VINCULO_GEAPA', 'CURRICULO_LATTES', 'DISCIPLINAS_AREAS', 'DISCIPLINAS', 'TITULACAO', 'FORMACAO', 'EIXO_TEMATICO_1', 'EIXO_TEMATICO_2', 'ORIGEM_CONTATO'] }),
     Object.freeze({ color: '#fff2cc', headers: ['RECEBE_COMUNICADOS_GERAIS', 'RECEBE_REUNIOES_ABERTAS', 'RECEBE_APRESENTACOES_ALUNOS', 'RECEBE_EVENTOS_VISITAS', 'ATIVO'] }),
     Object.freeze({ color: '#ead1dc', headers: ['OBSERVACOES', 'CRIADO_EM', 'ATUALIZADO_EM'] })
   ]),
@@ -314,7 +333,8 @@ const MEMBERS_SHEET_UX = Object.freeze({
     Object.freeze({ color: '#d9ead3', keys: ['name', 'rga', 'cpf', 'phone', 'email', 'birthDate', 'sex', 'instagram', 'birthCity', 'originState', 'naturality'] }),
     Object.freeze({ color: '#d0e0e3', keys: ['integratedAt', 'entrySemester', 'exitSemester', 'semesterCount', 'effectiveGroupTime'] }),
     Object.freeze({ color: '#fff2cc', keys: ['finalStatus', 'requestAt', 'approvedAt', 'reason'] }),
-    Object.freeze({ color: '#ead1dc', keys: ['wasDirector', 'internalNote', 'status', 'academicHistory'] })
+    Object.freeze({ color: '#ead1dc', keys: ['wasDirector', 'internalNote', 'status', 'academicHistory'] }),
+    Object.freeze({ color: '#d9d2e9', keys: ['receivesCommunications', 'communicationStatus', 'axesOfInterest', 'authorizationAt', 'authorizationOrigin', 'unsubscribedAt', 'communicationNotes', 'interestAxisI', 'interestAxisII', 'interestAxisIII', 'interestAxisIV', 'interestAxisV', 'interestAxisVI', 'interestAxisVII', 'interestAxisVIII'] })
   ]),
   seletivoInscricaoGroups: Object.freeze([
     Object.freeze({ color: '#d9ead3', headers: ['Nome', 'RGA', 'CPF', 'Telefone', 'EMAIL', 'Data de nascimento', 'Cidade natal', 'UF de origem'] }),
@@ -441,18 +461,45 @@ function members_applyCurrentSheetUx_() {
     } catch (err) {}
   }
 
-  return members_applyAliasedSheetUx_(SETTINGS.currentKey, 'current', MEMBERS_SHEET_UX.currentNotes, MEMBERS_SHEET_UX.currentGroups, {
+  var result = members_applyAliasedSheetUx_(SETTINGS.currentKey, 'current', MEMBERS_SHEET_UX.currentNotes, MEMBERS_SHEET_UX.currentGroups, {
     'Status': { values: [SETTINGS.values.active, SETTINGS.values.suspended, SETTINGS.values.offboarded], allowInvalid: true, helpText: 'Status cadastral sugerido para MEMBERS_ATUAIS.' }
   }, {
     compactTextHeaders: ['TEMPO_EFETIVO_NO_GRUPO', 'Participa/Participou de algum/alguns laboratorio(s), projeto(s), pesquisa(s), empresa junior, monitoria, etc? se sim, citar qual/quais.']
   });
+
+  members_clearAliasedColumnValidationForUx_(SETTINGS.currentKey, 'current', ['currentRole']);
+  return result;
 }
 
 function members_applyHistorySheetUx_() {
+  if (typeof ensureExMembrosCommunicationColumns_ === 'function') {
+    try {
+      ensureExMembrosCommunicationColumns_();
+    } catch (err) {}
+  }
+
   return members_applyAliasedSheetUx_(SETTINGS.histKey, 'hist', MEMBERS_SHEET_UX.histNotes, MEMBERS_SHEET_UX.histGroups, {
-    'Status final': { values: [SETTINGS.offboarding.histStatus], allowInvalid: true, helpText: 'Status final homologado esperado no historico.' }
+    'Status final': { values: [SETTINGS.offboarding.histStatus], allowInvalid: true, helpText: 'Status final homologado esperado no historico.' },
+    'RECEBE_COMUNICACOES_GEAPA': members_buildExternalYesNoValidationRule_('Consentimento do ex-membro para comunicacoes abertas do GEAPA.'),
+    'STATUS_COMUNICACAO': {
+      values: [
+        SETTINGS.exMembersCommunication.values.active,
+        SETTINGS.exMembersCommunication.values.notAuthorized,
+        SETTINGS.exMembersCommunication.values.unsubscribed
+      ],
+      allowInvalid: true,
+      helpText: 'Status operacional da comunicacao de ex-membros.'
+    },
+    'INTERESSE_EIXO_I': members_buildExternalYesNoValidationRule_('Flag operacional de interesse no eixo I.'),
+    'INTERESSE_EIXO_II': members_buildExternalYesNoValidationRule_('Flag operacional de interesse no eixo II.'),
+    'INTERESSE_EIXO_III': members_buildExternalYesNoValidationRule_('Flag operacional de interesse no eixo III.'),
+    'INTERESSE_EIXO_IV': members_buildExternalYesNoValidationRule_('Flag operacional de interesse no eixo IV.'),
+    'INTERESSE_EIXO_V': members_buildExternalYesNoValidationRule_('Flag operacional de interesse no eixo V.'),
+    'INTERESSE_EIXO_VI': members_buildExternalYesNoValidationRule_('Flag operacional de interesse no eixo VI.'),
+    'INTERESSE_EIXO_VII': members_buildExternalYesNoValidationRule_('Flag operacional de interesse no eixo VII.'),
+    'INTERESSE_EIXO_VIII': members_buildExternalYesNoValidationRule_('Flag operacional de interesse no eixo VIII.')
   }, {
-    compactTextHeaders: ['Motivo', 'Observacao interna', 'Participa/Participou de algum/alguns laboratorio(s), projeto(s), pesquisa(s), empresa junior, monitoria, etc? se sim, citar qual/quais.']
+    compactTextHeaders: ['Motivo', 'Observacao interna', 'OBS_COMUNICACAO', 'EIXOS_INTERESSE', 'Participa/Participou de algum/alguns laboratorio(s), projeto(s), pesquisa(s), empresa junior, monitoria, etc? se sim, citar qual/quais.']
   });
 }
 
@@ -592,6 +639,10 @@ function members_applyExternalProfessorsSheetUx_() {
     {
       centerData: true,
       compactTextHeaders: [
+        'CURSO_VINCULO',
+        'VINCULO_GEAPA',
+        'CURRICULO_LATTES',
+        'DISCIPLINAS_AREAS',
         'DISCIPLINAS',
         'TITULACAO',
         'FORMACAO',
@@ -773,7 +824,7 @@ function members_buildExternalParticipantsValidation_() {
 
 function members_buildExternalProfessorsValidation_() {
   var yesNo = members_buildExternalYesNoValidationRule_(
-    'Controle sugerido para comunicacao e status da base docente.'
+    'Controle sugerido para comunicacao e status da base de docentes e tecnicos.'
   );
   var axisValues = members_getExternalContactsAxisValidationValues_();
   var validation = {
@@ -781,7 +832,25 @@ function members_buildExternalProfessorsValidation_() {
     'RECEBE_REUNIOES_ABERTAS': yesNo,
     'RECEBE_APRESENTACOES_ALUNOS': yesNo,
     'RECEBE_EVENTOS_VISITAS': yesNo,
-    'ATIVO': yesNo
+    'ATIVO': yesNo,
+    'TIPO_PROFISSIONAL': {
+      values: ['DOCENTE', 'TECNICO', 'OUTRO_ACADEMICO'],
+      allowInvalid: true,
+      helpText: 'Classificacao sugerida para contatos academicos do GEAPA.'
+    },
+    'VINCULO_GEAPA': {
+      values: [
+        'ORIENTADOR_EXTENSAO',
+        'ORIENTADOR_PESQUISA',
+        'ORIENTADOR_INOVACAO',
+        'COORDENADOR',
+        'COLABORADOR_REUNIOES',
+        'SEM_VINCULO_ATIVO',
+        'APENAS_REGISTRO'
+      ],
+      allowInvalid: true,
+      helpText: 'Campo manual da diretoria para indicar o vinculo operacional com o GEAPA.'
+    }
   };
 
   if (axisValues.length) {
@@ -873,6 +942,64 @@ function members_applyDropdownValidationFallback_(sheet, validationRules) {
 
     sheet.getRange(2, col + 1, Math.max(lastRow - 1, 1), 1).setDataValidation(builder.build());
   });
+}
+
+/**
+ * Remove validacoes de dados de colunas resolvidas por aliases de cabecalho.
+ *
+ * @param {string} key
+ * @param {string} scope
+ * @param {string[]} aliasKeys
+ * @return {Object}
+ */
+function members_clearAliasedColumnValidationForUx_(key, scope, aliasKeys) {
+  var sheet = members_getSheetByKeyForUx_(key);
+  if (!sheet) return members_buildMissingSheetUxResult_(key);
+
+  var headers = members_getSheetHeadersForUx_(sheet);
+  var lastRow = Math.max(sheet.getMaxRows(), 2);
+  var cleared = 0;
+
+  (aliasKeys || []).forEach(function(aliasKey) {
+    var col = members_findAliasedColumnForValidationClear_(headers, scope, aliasKey);
+    if (col < 0) return;
+
+    sheet.getRange(2, col + 1, Math.max(lastRow - 1, 1), 1).clearDataValidations();
+    cleared += 1;
+  });
+
+  return Object.freeze({
+    ok: true,
+    sheetName: sheet.getName(),
+    cleared: cleared
+  });
+}
+
+/**
+ * Localiza uma coluna para limpeza de validacao sem cair em aliases amplos.
+ *
+ * @param {string[]} headers
+ * @param {string} scope
+ * @param {string} aliasKey
+ * @return {number}
+ */
+function members_findAliasedColumnForValidationClear_(headers, scope, aliasKey) {
+  var aliases = members_getHeaderAliases_(scope, aliasKey).map(members_normalizeOffboardingHeader_);
+  var forbidden = [];
+
+  if (scope === 'current' && aliasKey === 'currentRole') {
+    forbidden = members_getHeaderAliases_('current', 'suspended')
+      .concat(members_getHeaderAliases_('current', 'status'))
+      .map(members_normalizeOffboardingHeader_);
+  }
+
+  for (var i = 0; i < (headers || []).length; i++) {
+    var normalized = members_normalizeOffboardingHeader_(headers[i]);
+    if (forbidden.indexOf(normalized) >= 0) continue;
+    if (aliases.indexOf(normalized) >= 0) return i;
+  }
+
+  return -1;
 }
 
 function members_ensureFilterFallback_(sheet) {

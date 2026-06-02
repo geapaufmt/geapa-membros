@@ -156,10 +156,14 @@ Arquivo principal:
 
 Fluxo:
 
-- le a planilha bruta do formulario por `PARTICIPANTES_EXTERNOS_FORM`;
+- le a planilha bruta do formulario por `PESSOAS_EXTERNAS_FORM` ou pela chave legada `PARTICIPANTES_EXTERNOS_FORM`;
 - usa `EIXOS_TEMATICOS_OFICIAIS` como fonte oficial da aba `Eixos`;
-- detecta respostas docentes por perfil e por preenchimento do bloco docente;
+- detecta respostas de docentes e tecnicos por perfil e por preenchimento do bloco academico/profissional;
 - faz upsert por e-mail em `PROFS_BASE` ou `PESSOAS_EXTERNAS_BASE`;
+- em `PROFS_BASE`, usa uma unica coluna oficial `EMAIL`; quando houver e-mail preferencial no formulario, ele passa a ser o e-mail efetivo salvo;
+- em `PROFS_BASE`, registra `TIPO_PROFISSIONAL`, `CURSO_VINCULO`, `CURRICULO_LATTES` e `DISCIPLINAS_AREAS`;
+- `VINCULO_GEAPA` e campo manual da diretoria, com lista sugerida para orientador de extensao, pesquisa, inovacao, coordenador, colaborador de reunioes, sem vinculo ativo ou apenas registro;
+- as colunas legadas `DISCIPLINAS` e `EMAIL_PREFERENCIAL` continuam aceitas como aliases de compatibilidade durante a migracao;
 - transforma a escolha `Todos` nos eixos tematicos em `SIM` para todos os `INTERESSE_EIXO_*` da base de externos;
 - garante ids (`ID_PROFESSOR` / `ID_PARTICIPANTE_EXTERNO`) sem renumerar registros antigos.
 - para participantes externos, a geracao de `ID_PARTICIPANTE_EXTERNO` ocorre localmente no importador sobre `PESSOAS_EXTERNAS_BASE`, evitando dependencia de apontamentos legados do core para a base antiga `PARTICIPANTES_EXTERNOS_BASE`.
@@ -175,11 +179,13 @@ Fluxo:
 - reaproveita `VIGENCIA_DIRETORIAS`, `VIGENCIA_MEMBROS_DIRETORIAS`, `VIGENCIA_ASSESSORES`, `VIGENCIA_SEMESTRES_DIRETORIAS`, `VIGENCIA_CONSELHEIROS` e `CARGOS_INSTITUCIONAIS_CONFIG` via `GEAPA-CORE`;
 - trata `Ocupacao` como termo preferencial nas interfaces novas, mantendo compatibilidade com o cabecalho legado `Cargo/Função` nas abas oficiais;
 - recalcula em `MEMBERS_ATUAIS` o painel de elegibilidade temporal:
-- `QTD_DIAS_QUE_CONTAM_PARA_LIMITE_DIRETORIA`
-- `LIMITE_DIAS_DIRETORIA`
-- `SALDO_DIAS_DIRETORIA`
-- `STATUS_ELEGIBILIDADE_DIRETORIA`
-- `DATA_LIMITE_ESTIMADA_DIRETORIA`
+  - `QTD_DIAS_QUE_CONTAM_PARA_LIMITE_DIRETORIA`
+  - `LIMITE_DIAS_DIRETORIA`
+  - `SALDO_DIAS_DIRETORIA`
+  - `STATUS_ELEGIBILIDADE_DIRETORIA`
+  - `DATA_LIMITE_ESTIMADA_DIRETORIA`
+- deriva `CARGO_FUNCAO_ATUAL`/`OCUPACAO_ATUAL` a partir das vigencias oficiais, priorizando diretoria vigente, assessoria vigente, conselho vigente e, sem vinculo ativo, `Membro`;
+- deriva `FLAG_JA_FOI_SUSPENSO` a partir de `OFFBOARD_QUEUE_SUSPENSIONS`/`PEDIDOS_SUSPENSAO` e, de forma complementar, de eventos de suspensao em `MEMBER_EVENTOS_VINCULO`;
 - processa `DIRETORIA_NOMEACOES_RESPONSES` sem reimplementar o fluxo de Presidente e Vice;
 - valida cargo no catalogo oficial, disponibilidade por `ID_Diretoria`, existencia do membro em `MEMBERS_ATUAIS`, compatibilidade entre `RGA` e nome, e elegibilidade temporal;
 - le e escreve a ocupacao com compatibilidade entre `Ocupacao` e `Cargo/Função`, sem renomear ainda os cabecalhos oficiais existentes;
@@ -193,9 +199,14 @@ Fluxo:
 - sincroniza as opcoes de `DIRETORIA_NOMEACOES_FORM` com base na diretoria alvo e nos cargos vagos permitidos via formulario, e garante as perguntas fixas de permanencia e data prevista de saida;
 - identifica diretores de saida, envia convite para `CONSELHEIROS_ADESAO_FORM` e processa `CONSELHEIROS_ADESAO_RESPONSES`;
 - o convite para conselho considera apenas diretores com pelo menos 3 meses no cargo e que nao estejam reconduzidos para a proxima gestao;
+- o processamento das respostas reconhece a coluna `Aceite ou recusa` do formulario e tolera respostas processadas poucos dias apos o fim efetivo do vinculo;
+- respostas como `Nao aceito` sao tratadas explicitamente como recusa antes de qualquer teste textual de aceite;
+- a vigencia de conselheiros aceitos usa a janela oficial de `Semestres_Diretoria`, com fallback de 6 meses quando a janela semestral nao estiver cadastrada;
+- `members_repairCouncilorAdhesionsFromResponses()` repara respostas ja processadas, removendo registros criados por recusa, ajustando `Data_Fim` para a janela semestral correta e reenfileirando a devolutiva individual;
 - reenvios de convite para conselheiros usam contador persistente em `ScriptProperties` para gerar uma `correlationKey` nova no Mail Hub, sem exigir limpeza manual da `MAIL_SAIDA` ou do `MAIL_INDICE`;
 - registra conselheiros aceitos em `VIGENCIA_CONSELHEIROS`;
 - sincroniza os acessos das pastas `ADMINISTRATIVO_PASTA` e `TRANSICAO_CONSELHEIROS_PASTA` de forma idempotente;
+- replica a permissao de editor da diretoria vigente para subpastas, arquivos e destinos de atalhos encontrados dentro de `ADMINISTRATIVO_PASTA`, restaurando o acesso no proximo job quando ele for removido manualmente;
 - apenas diretores entram automaticamente no sync de acesso do Drive; assessores ficam fora do acesso automatico e so permanecem quando houver concessao manual excepcional ainda compatível com o vinculo ativo.
 - trata `TRANSICAO_CONSELHEIROS_PASTA` como catalogo oficial de leitura: os atalhos dentro dela sao resolvidos para as pastas reais de destino e essas pastas tambem recebem permissao de leitor para diretores em transicao e conselheiros ativos.
 - nas pastas reais apontadas pelos atalhos da transicao, a diretoria vigente e reconciliada como editora e transicao/conselheiros sao reconciliados como leitores, restaurando acessos removidos manualmente enquanto o vinculo continuar valido.
@@ -404,6 +415,81 @@ Entradas publicas:
 Trigger sugerido no modulo:
 
 - `members_processApprovedDismissalByAbsenceEvents` a cada 15 minutos.
+
+## Pessoas v2
+
+Arquivo principal:
+
+- `10_members_pessoas_v2_service.gs`
+
+Escopo desta etapa:
+
+- refletir eventos homologados/processados do dominio de membros em `PESSOAS v2`;
+- criar ou atualizar `PESSOAS_BASE`, `PESSOAS_IDENTIFICADORES`, `MEMBROS_DETALHES` e `VINCULOS_GEAPA`;
+- recalcular `PESSOAS_RESUMO_OPERACIONAL` como cache;
+- manter `EX_MEMBRO` como nomenclatura legada e usar `EGRESSO` como tipo novo de vinculo.
+
+Fluxos integrados:
+
+- ingresso por aceite de convite: registra/atualiza pessoa, identificadores, detalhes de membro e vinculo `MEMBRO_EFETIVO`;
+- desligamento homologado: encerra o vinculo ativo `MEMBRO_EFETIVO` e cria vinculo atual `EGRESSO`;
+- o fluxo legado de `MEMBERS_ATUAIS`/`MEMBERS_HIST` continua funcionando.
+
+Funcoes manuais:
+
+- `members_diagnosticarPessoasV2(options)`
+- `members_aplicarEventoMembroV2(event, options)`
+- `members_recalcularPessoasResumoOperacionalV2(options)`
+- `members_recalcularMembrosDetalhesSemestreAtualV2(options)`
+- `members_diagnosticarPessoasResumoOperacionalV2(options)`
+
+Uso seguro:
+
+```javascript
+members_diagnosticarPessoasV2()
+members_recalcularMembrosDetalhesSemestreAtualV2({ dryRun: true })
+members_recalcularPessoasResumoOperacionalV2({ dryRun: true })
+members_diagnosticarPessoasResumoOperacionalV2()
+```
+
+Escrita real do semestre atual em `MEMBROS_DETALHES` exige confirmacao:
+
+```javascript
+members_recalcularMembrosDetalhesSemestreAtualV2({
+  dryRun: false,
+  confirmacao: 'RECALCULAR_MEMBROS_DETALHES_SEMESTRE_ATUAL_V2'
+})
+```
+
+Escrita real do resumo exige confirmacao:
+
+```javascript
+members_recalcularPessoasResumoOperacionalV2({
+  dryRun: false,
+  confirmacao: 'RECALCULAR_PESSOAS_RESUMO_V2'
+})
+```
+
+Observacoes:
+
+- se `PESSOAS v2` ainda nao estiver resolvida pelo Registry/Library, a camada retorna aviso e nao bloqueia o fluxo legado;
+- o modulo consome o CORE para recalcular `SEMESTRE_ATUAL` em `MEMBROS_DETALHES`, preencher `PESSOAS_RESUMO_OPERACIONAL` e diagnosticar o resumo;
+- o modulo nao decide frequencia, presenca, justificativas, apresentacoes, cargos ou funcoes;
+- cargos/funcoes continuam no dominio `VIGENCIAS`; frequencia e apresentacoes continuam no dominio `ATIVIDADES`.
+
+## Comunicacao de ex-membros
+
+Arquivos principais:
+
+- `06_members_offboarding.gs`
+- `06_members_ex_members_communication.gs`
+
+Escopo atual no modulo:
+
+- a base oficial para ex-membros continua sendo `MEMBERS_HIST` / `Ex-Membros`;
+- o offboarding pode receber preferencias de comunicacao no payload do desligamento voluntario;
+- quando essas preferencias existem, o modulo registra consentimento, status de comunicacao, eixos de interesse e flags `INTERESSE_EIXO_*` na propria base de `Ex-Membros`;
+- a funcao local `getExMembersCommunicationRecipients_(options)` consulta somente `Ex-Membros`, nunca a fila administrativa de pedidos.
 
 ---
 

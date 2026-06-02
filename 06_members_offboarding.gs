@@ -35,7 +35,12 @@ function members_offboardApprovedImmediateExit(payload) {
 
   try {
     const currentSheet = GEAPA_CORE.coreGetSheetByKey(SETTINGS.currentKey);
-    const histSheet = GEAPA_CORE.coreGetSheetByKey(SETTINGS.histKey);
+    const histContext = typeof ensureExMembrosCommunicationColumns_ === "function"
+      ? ensureExMembrosCommunicationColumns_()
+      : null;
+    const histSheet = histContext && histContext.sheet
+      ? histContext.sheet
+      : GEAPA_CORE.coreGetSheetByKey(SETTINGS.histKey);
 
     if (!currentSheet || !histSheet) {
       throw new Error("Nao foi possivel localizar MEMBERS_ATUAIS ou MEMBERS_HIST.");
@@ -52,13 +57,24 @@ function members_offboardApprovedImmediateExit(payload) {
     }
 
     const duplicate = members_historyFindEquivalentRow_(histSheet, payload);
+    const existingIdentity = duplicate.found
+      ? { found: false }
+      : (typeof members_findExistingExMemberRowByIdentity_ === "function"
+          ? members_findExistingExMemberRowByIdentity_(histSheet, payload)
+          : { found: false });
+    const histHeaders = histContext && histContext.headers && histContext.headers.length
+      ? histContext.headers.slice()
+      : histSheet
+          .getRange(1, 1, 1, histSheet.getLastColumn())
+          .getValues()[0]
+          .map(h => String(h || "").trim());
+    const communicationData = typeof members_buildExMemberCommunicationDataFromPayload_ === "function"
+      ? members_buildExMemberCommunicationDataFromPayload_(payload)
+      : null;
+    let targetHistRowNumber = duplicate.found ? duplicate.rowNumber : 0;
+    let updatedExistingHistory = false;
 
     if (!duplicate.found) {
-      const histHeaders = histSheet
-        .getRange(1, 1, 1, histSheet.getLastColumn())
-        .getValues()[0]
-        .map(h => String(h || "").trim());
-
       const histRow = members_buildHistoryRowFromCurrentAndOffboard_(
         match.rowValues,
         match.headers,
@@ -67,8 +83,40 @@ function members_offboardApprovedImmediateExit(payload) {
         match.matchBy
       );
 
-      histSheet.appendRow(histRow);
+      if (existingIdentity.found) {
+        const mergedRow = typeof members_buildMergedHistoryRowForExistingExMember_ === "function"
+          ? members_buildMergedHistoryRowForExistingExMember_(
+              existingIdentity.rowValues,
+              histRow,
+              histHeaders
+            )
+          : histRow;
+        histSheet.getRange(existingIdentity.rowNumber, 1, 1, histHeaders.length).setValues([mergedRow]);
+        targetHistRowNumber = existingIdentity.rowNumber;
+        updatedExistingHistory = true;
+      } else {
+        histSheet.appendRow(histRow);
+        targetHistRowNumber = histSheet.getLastRow();
+      }
     }
+
+    if (targetHistRowNumber && communicationData && typeof updateExMemberCommunicationFields_ === "function") {
+      updateExMemberCommunicationFields_(histSheet, targetHistRowNumber, communicationData);
+    }
+
+    const pessoasV2Result = members_tryApplyPessoasV2Event_({
+      eventType: 'DESLIGAMENTO',
+      eventDate: members_offboardingToDate_(payload.approvedAt) || payload.approvedAt || new Date(),
+      approvedAt: members_offboardingToDate_(payload.approvedAt) || payload.approvedAt || '',
+      rga: payload.memberRga || members_pickValue_(match.rowValues, match.headerMap, ['rga']),
+      memberName: payload.memberName || members_pickValue_(match.rowValues, match.headerMap, ['membro', 'nome']),
+      memberEmail: payload.memberEmail || members_pickValue_(match.rowValues, match.headerMap, ['email']),
+      reason: String(payload.reason || '').trim(),
+      sourceModule: 'geapa-membros',
+      sourceKey: SETTINGS.histKey,
+      sourceRow: targetHistRowNumber || '',
+      notes: 'Desligamento homologado refletido como EGRESSO em Pessoas v2.'
+    });
 
     currentSheet.deleteRow(match.rowNumber);
     GEAPA_CORE.coreSyncMembersCurrentDerivedFields();
@@ -77,8 +125,11 @@ function members_offboardApprovedImmediateExit(payload) {
       ok: true,
       moved: true,
       duplicatedHistory: duplicate.found,
+      updatedExistingHistory: updatedExistingHistory,
       matchBy: match.matchBy,
-      removedCurrentRowNumber: match.rowNumber
+      targetHistRowNumber: targetHistRowNumber,
+      removedCurrentRowNumber: match.rowNumber,
+      pessoasV2: pessoasV2Result
     };
   } finally {
     lock.releaseLock();
