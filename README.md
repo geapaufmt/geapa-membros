@@ -2,6 +2,11 @@
 
 Módulo responsável pelo fluxo de entrada, integração, histórico de saída e rotinas auxiliares de membros do GEAPA. O projeto depende da Library `GEAPA-CORE`.
 
+> A Gestão V2 de solicitações voluntárias de vínculo está documentada em
+> [docs/solicitacoes-vinculo-v2.md](docs/solicitacoes-vinculo-v2.md). Nesta
+> branch, todos os setups permanecem em dry-run e não há dependência runtime do
+> módulo legado de desligamentos e suspensões.
+
 ---
 
 ## O que o módulo faz hoje

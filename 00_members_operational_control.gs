@@ -20,7 +20,8 @@ const MEMBERS_OPERATIONAL_CONTROL = Object.freeze({
     councilors: "CONSELHEIROS",
     governanceDriveSync: "SYNC_DRIVE_GOVERNANCA",
     externalContactsImport: "IMPORTACAO_CONTATOS_EXTERNOS",
-    dismissalByAbsenceEvents: "DESLIGAMENTO_POR_FALTAS_EVENTOS"
+    dismissalByAbsenceEvents: "DESLIGAMENTO_POR_FALTAS_EVENTOS",
+    voluntaryLinkRequests: "SOLICITACOES_VINCULO_V2"
   }),
   capabilities: Object.freeze({
     trigger: "TRIGGER",
