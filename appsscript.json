@@ -4,9 +4,9 @@
     "libraries": [
       {
         "userSymbol": "GEAPA_CORE",
-        "version": "0",
+        "version": "19",
         "libraryId": "15Ha6cxA6NInRwyUTmLAqRX4pnmewetkZ32j4I_yFKh9hEwOHmPCL7F_d",
-        "developmentMode": true
+        "developmentMode": false
       }
     ]
   },

@@ -182,5 +182,6 @@ pela etapa registrada.
 - criar e auditar a entrada DEV dos parâmetros normativos;
 - decidir a política mínima de acesso ao Portal durante suspensão;
 - validar as integrações V2 de apresentações, arquivos, obrigações e funções;
-- publicar versões imutáveis e remover `developmentMode` do manifest do
-  Membros antes de qualquer uso fora de desenvolvimento.
+- publicar uma versão imutável do Membros antes de qualquer uso fora de
+  desenvolvimento. Esta branch já fixa o Core na versão 19 e mantém
+  `developmentMode: false`.
