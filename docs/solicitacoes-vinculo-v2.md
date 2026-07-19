@@ -145,6 +145,20 @@ repete no backend e resolve novamente a pessoa pela sessão oficial.
 
 Toda transição é validada no backend; o frontend não envia o próximo status.
 
+## Notificações
+
+As notificações do fluxo usam o contrato público
+`GEAPA_CORE.coreMailQueueOutgoing` e apenas enfileiram mensagens na `MAIL_SAIDA`.
+O processamento e o envio ficam a cargo do trigger central
+`coreMailProcessOutbox`, sem prolongar a requisição do Portal.
+
+O destinatário principal é sempre o e-mail oficial da pessoa resolvida pelo
+backend. Cópias operacionais são opcionais e devem ser configuradas na chave
+ativa `MEMBROS_VINCULO_EMAILS_OPERACIONAIS` da `MAIL_CONFIG`; nenhum endereço
+institucional fica hardcoded no módulo. A `correlationKey` combina solicitação e
+tipo de evento, permitindo que a fila deduplique itens pendentes ou já enviados
+e reprocesse itens em erro.
+
 ## Semestre letivo
 
 Suspensão e desligamento de fim de semestre exigem exatamente um semestre

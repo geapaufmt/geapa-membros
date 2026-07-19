@@ -403,13 +403,83 @@ function membersMeuVinculoCancelarSolicitacao(payload, contexto) {
   } catch (error) { return membersVinculoEnvelopeError_(error, requestId); }
 }
 
+function membersVinculoNotificationDefinition_(eventType) {
+  var definitions = {
+    SOLICITACAO_RECEBIDA: { subject: 'Solicitacao de vinculo recebida', message: 'Sua solicitacao foi recebida e esta disponivel para acompanhamento no Portal GEAPA.' },
+    COMPLEMENTO_VINCULO_SOLICITADO: { subject: 'Complemento solicitado', message: 'A analise da sua solicitacao requer informacoes complementares.' },
+    ANALISE_PRELIMINAR_CONCLUIDA: { subject: 'Analise preliminar concluida', message: 'A analise preliminar da sua solicitacao foi concluida.' },
+    PRONTO_PARA_ANALISE_FINAL: { subject: 'Solicitacao pronta para analise final', message: 'Sua solicitacao esta pronta para a decisao final da Diretoria.' },
+    SUSPENSAO_APROVADA: { subject: 'Suspensao voluntaria aprovada', message: 'Sua solicitacao de suspensao voluntaria foi aprovada.' },
+    INICIO_SUSPENSAO: { subject: 'Suspensao voluntaria iniciada', message: 'O periodo de suspensao voluntaria foi iniciado.' },
+    RETORNO_SUSPENSAO: { subject: 'Retorno da suspensao registrado', message: 'O retorno do periodo de suspensao foi registrado.' },
+    SOLICITACAO_VINCULO_INDEFERIDA: { subject: 'Solicitacao de vinculo indeferida', message: 'A decisao sobre sua solicitacao esta disponivel no Portal GEAPA.' },
+    DESLIGAMENTO_HOMOLOGADO_EXECUTADO: { subject: 'Desligamento voluntario homologado', message: 'O desligamento voluntario foi homologado e registrado.' },
+    SOLICITACAO_VINCULO_CANCELADA: { subject: 'Solicitacao de vinculo cancelada', message: 'Sua solicitacao de vinculo foi cancelada.' }
+  };
+  return definitions[membersVinculoToken_(eventType)] || {
+    subject: 'Atualizacao da solicitacao de vinculo',
+    message: 'Houve uma atualizacao na sua solicitacao de vinculo.'
+  };
+}
+
+function membersVinculoOperationalMailRecipients_(recipient) {
+  try {
+    if (typeof GEAPA_CORE === 'undefined' || !GEAPA_CORE || typeof GEAPA_CORE.coreMailGetConfigList !== 'function') return [];
+    var primary = String(recipient || '').trim().toLowerCase();
+    var seen = {};
+    return (GEAPA_CORE.coreMailGetConfigList(MEMBERS_VINCULO_CFG.mail.operationalRecipientsConfigKey) || []).map(function(item) {
+      return String(item || '').trim().toLowerCase();
+    }).filter(function(item) {
+      if (!item || item === primary || seen[item]) return false;
+      seen[item] = true;
+      return true;
+    });
+  } catch (ignoredConfigError) {
+    return [];
+  }
+}
+
+function membersVinculoBuildNotificationContract_(eventType, request, session, environment) {
+  var recipient = String(session && session.email || '').trim().toLowerCase();
+  if (!recipient) throw membersVinculoError_('NOTIFICACAO_DESTINATARIO_AUSENTE', 'E-mail oficial da pessoa nao localizado.', {});
+  var normalizedEvent = membersVinculoToken_(eventType);
+  var definition = membersVinculoNotificationDefinition_(normalizedEvent);
+  var requestId = String(request && request.ID_SOLICITACAO || '').trim();
+  var status = String(request && request.STATUS_SOLICITACAO || '').trim();
+  return {
+    moduleName: 'MEMBROS',
+    templateKey: 'GEAPA_CLASSICO',
+    correlationKey: 'SVI:' + requestId + ':' + normalizedEvent,
+    entityType: 'SOLICITACAO_VINCULO',
+    entityId: requestId,
+    flowCode: normalizedEvent,
+    stage: normalizedEvent,
+    to: recipient,
+    bcc: membersVinculoOperationalMailRecipients_(recipient),
+    subjectHuman: definition.subject,
+    payload: {
+      title: definition.subject,
+      introText: definition.message,
+      itemsTitle: 'Dados para acompanhamento',
+      items: [
+        { label: 'Protocolo', value: requestId },
+        { label: 'Status', value: status }
+      ],
+      footerNote: 'Consulte o Portal GEAPA para acompanhar os detalhes da solicitacao.'
+    },
+    metadata: { ambiente: membersVinculoToken_(environment), tipoEvento: normalizedEvent }
+  };
+}
+
 function membersVinculoNotifyBestEffort_(eventType, request, session, environment) {
   try {
-    if (typeof GEAPA_CORE !== 'undefined' && GEAPA_CORE && typeof GEAPA_CORE.coreMailEnqueue === 'function') {
-      return GEAPA_CORE.coreMailEnqueue({ templateKey: 'GEAPA_CLASSICO', correlationKey: 'SVI:' + request.ID_SOLICITACAO + ':' + eventType, tipoEvento: eventType, destinatario: session.email || '', ambiente: environment, dados: { protocolo: request.ID_SOLICITACAO, status: request.STATUS_SOLICITACAO } });
+    if (typeof GEAPA_CORE === 'undefined' || !GEAPA_CORE || typeof GEAPA_CORE.coreMailQueueOutgoing !== 'function') {
+      return { ok: false, message: 'Mail Hub nao disponivel; reenvio podera ser feito depois.' };
     }
-    return { ok: false, message: 'Mail Hub nao disponivel; reenvio podera ser feito depois.' };
-  } catch (error) { return { ok: false, message: error.message }; }
+    var result = GEAPA_CORE.coreMailQueueOutgoing(membersVinculoBuildNotificationContract_(eventType, request, session, environment));
+    if (!result || result.ok !== true) return { ok: false, message: 'O Mail Hub nao confirmou o enfileiramento da notificacao.' };
+    return result;
+  } catch (error) { return { ok: false, message: error.message || 'Falha ao enfileirar notificacao.' }; }
 }
 
 function membersVinculoNotifyOwnerBestEffort_(deps, queue, request, environment, eventType, actor, now) {

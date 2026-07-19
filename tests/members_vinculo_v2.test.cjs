@@ -229,6 +229,66 @@ test('89 solicitacao antiga nao permite inventar snapshot', () => { const req = 
 test('90 solicitacao antiga pode adotar regra vigente auditavelmente', () => { const req = baseRequest({ STATUS_SOLICITACAO: 'RECEBIDO', PARAMETRO_ATA_DESLIGAMENTO_ID: '', ATA_DESLIGAMENTO_OBRIGATORIA_SNAPSHOT: '', ATA_DESLIGAMENTO_BASE_LEGAL_SNAPSHOT: '', ATA_DESLIGAMENTO_TIPO_VALOR_SNAPSHOT: '' }); const f = storeFactory({ requests: [req], session: adminSession() }); const r = sandbox.membersAdminSolicitacaoVinculoHomologarEfetivarDesligamento({ idSolicitacao: 'SVI-TESTE', tratamentoTransicao: 'APLICAR_VIGENTE', justificativaAdministrativaReforcada: 'Justificativa administrativa reforcada suficiente.', ataReferencia: 'ATA-TESTE', confirmacaoReforcada: true }, memberContext(f.deps)); assert.equal(r.ok, true); assert.equal(f.store['PESSOAS:SOLICITACOES_VINCULO'].records[0].TRATAMENTO_TRANSICAO, 'APLICAR_VIGENTE'); });
 test('91 ausencia da regra de ata nao bloqueia suspensao', () => { const p = normative(); delete p.DESLIGAMENTO_VOLUNTARIO_DECISAO_FINAL_EXIGE_ATA; const f = storeFactory({ parameters: p }); const r = sandbox.membersMeuVinculoSolicitarSuspensao(suspensionPayload(), memberContext(f.deps)); assert.equal(r.ok, true); assert.equal(f.store['PESSOAS:SOLICITACOES_VINCULO'].records.length, 1); });
 
+test('92 notificacao usa contrato publico atual do Mail Hub', () => {
+  let queued;
+  sandbox.GEAPA_CORE = {
+    coreMailGetConfigList: () => [],
+    coreMailQueueOutgoing: (contract) => { queued = contract; return { ok: true, queued: true, status: 'PENDENTE' }; }
+  };
+  try {
+    const result = sandbox.membersVinculoNotifyBestEffort_('SOLICITACAO_RECEBIDA', baseRequest({ STATUS_SOLICITACAO: 'RECEBIDO' }), { email: 'pessoa@example.invalid' }, 'DEV');
+    assert.equal(result.ok, true);
+    assert.equal(queued.moduleName, 'MEMBROS');
+    assert.equal(queued.to, 'pessoa@example.invalid');
+    assert.equal(queued.subjectHuman, 'Solicitacao de vinculo recebida');
+    assert.equal(queued.flowCode, 'SOLICITACAO_RECEBIDA');
+    assert.equal(queued.entityId, 'SVI-TESTE');
+    assert.equal(queued.metadata.ambiente, 'DEV');
+    assert.equal(Object.hasOwn(queued, 'destinatario'), false);
+    assert.equal(Object.hasOwn(queued, 'dados'), false);
+  } finally { delete sandbox.GEAPA_CORE; }
+});
+
+test('93 destinatarios operacionais vem de MAIL_CONFIG sem duplicar o membro', () => {
+  let configKey;
+  sandbox.GEAPA_CORE = {
+    coreMailGetConfigList: (key) => { configKey = key; return ['secretaria@example.invalid', 'PESSOA@example.invalid', 'secretaria@example.invalid']; },
+    coreMailQueueOutgoing: (contract) => ({ ok: true, queued: true, bcc: contract.bcc })
+  };
+  try {
+    const contract = sandbox.membersVinculoBuildNotificationContract_('DESLIGAMENTO_HOMOLOGADO_EXECUTADO', baseRequest({ STATUS_SOLICITACAO: 'EXECUTADO' }), { email: 'pessoa@example.invalid' }, 'PROD');
+    assert.equal(configKey, 'MEMBROS_VINCULO_EMAILS_OPERACIONAIS');
+    assert.deepEqual(Array.from(contract.bcc), ['secretaria@example.invalid']);
+    assert.equal(contract.metadata.ambiente, 'PROD');
+  } finally { delete sandbox.GEAPA_CORE; }
+});
+
+test('94 ausencia do Mail Hub continua sendo falha controlada', () => {
+  sandbox.GEAPA_CORE = {};
+  try {
+    const result = sandbox.membersVinculoNotifyBestEffort_('SOLICITACAO_RECEBIDA', baseRequest(), { email: 'pessoa@example.invalid' }, 'DEV');
+    assert.equal(result.ok, false);
+    assert.match(result.message, /Mail Hub nao disponivel/);
+  } finally { delete sandbox.GEAPA_CORE; }
+});
+
+test('95 destinatario ausente nao cria item incompleto na fila', () => {
+  let calls = 0;
+  sandbox.GEAPA_CORE = { coreMailGetConfigList: () => [], coreMailQueueOutgoing: () => { calls += 1; return { ok: true }; } };
+  try {
+    const result = sandbox.membersVinculoNotifyBestEffort_('SOLICITACAO_RECEBIDA', baseRequest(), {}, 'DEV');
+    assert.equal(result.ok, false);
+    assert.equal(calls, 0);
+    assert.match(result.message, /E-mail oficial/);
+  } finally { delete sandbox.GEAPA_CORE; }
+});
+
+test('96 integracao de vinculo nao referencia contrato legado inexistente', () => {
+  const service = fs.readFileSync(path.join(root, '12_members_vinculo_v2_service.gs'), 'utf8');
+  assert.equal(service.includes('coreMailEnqueue'), false);
+  assert.equal(service.includes('coreMailQueueOutgoing'), true);
+});
+
 let passed = 0;
 for (const item of tests) {
   try {
