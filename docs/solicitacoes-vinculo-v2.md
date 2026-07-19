@@ -7,9 +7,12 @@ oficial e o ambiente de dados resolvido no backend. O navegador nunca escolhe
 ## Parametros normativos
 
 Os valores sao lidos da key `NORMAS_PARAMETROS_OPERACIONAIS` pelos IDs
-`SUSPENSAO_MINIMA` e `BLOQUEIO_DESLIGAMENTO_ANTES_APRESENTACAO`. Nao ha valor
-numerico de fallback. Ausencia, inatividade, unidade diferente de `DIAS`, valor
-nao positivo, modulo incompativel ou `BASE_LEGAL` vazia bloqueiam a operacao.
+`SUSPENSAO_MINIMA`, `BLOQUEIO_DESLIGAMENTO_ANTES_APRESENTACAO` e
+`DESLIGAMENTO_VOLUNTARIO_DECISAO_FINAL_EXIGE_ATA`. Nao ha fallback. Os dois
+primeiros exigem `TIPO_VALOR=NUMERO`, valor positivo e `UNIDADE=DIAS`. A regra
+de ata exige `TIPO_VALOR=BOOLEANO`, `VALOR=SIM|NAO` e
+`UNIDADE=NAO_APLICAVEL`. Ausencia, inatividade, tipo/unidade invalidos, modulo
+incompativel ou `BASE_LEGAL` vazia bloqueiam a operacao.
 
 Cada pedido salva snapshots. Antes da decisao, os valores vigentes sao relidos.
 Mudanca de regra sem nova `BASE_LEGAL` bloqueia. Mudanca normativa valida exige
@@ -22,9 +25,28 @@ auditoria; snapshot e valor vigente permanecem visiveis.
   ata e opcional;
 - segunda suspensao excepcional: justificativa reforcada, responsavel e
   auditoria; documento e opcional;
-- desligamento voluntario: ata ou `ID_ATA_DELIBERACAO` e obrigatorio somente na
-  decisao final, inclusive indeferimento; nao e exigido no pedido ou analise
-  preliminar.
+- desligamento voluntario: a exigencia de ata ou `ID_ATA_DELIBERACAO` na
+  decisao final, inclusive indeferimento, e obtida do parametro tipado e de seu
+  snapshot; nao e exigida no pedido ou analise preliminar. Enquanto a base
+  legal vigente for `NC01-2025-ART16-IV`, `VALOR=NAO` e rejeitado. Uma dispensa
+  futura exige nova `BASE_LEGAL`, tratamento de transicao e auditoria.
+
+## Decisao direta controlada
+
+Iniciar analise continua disponivel, mas nao e pre-requisito artificial para
+todos os casos. O backend permite exclusivamente:
+
+- desligamento apos homologacao: `RECEBIDO -> EXECUTADO`, com permissoes de
+  homologacao e execucao, confirmacao reforcada, releitura normativa,
+  revalidacao do vinculo e validacoes externas;
+- desligamento de fim de semestre: `RECEBIDO ->
+  AGENDADO_PARA_ANALISE_FINAL`, sem homologacao ou efeito;
+- indeferimento: `RECEBIDO -> INDEFERIDO`, com observacao e requisito de ata
+  calculado pela regra vigente/snapshot.
+
+Essas excecoes sao verificadas por tipo, modalidade e acao; nao existe uma
+transicao generica `RECEBIDO -> EXECUTADO`. Repetir uma execucao ja concluida
+retorna sucesso idempotente e nao duplica evento, resumo ou notificacao.
 
 `GESTAO_ATAS_DELIBERACOES` e o destino preferencial de integracao futura. No
 MVP, `ATA_REFERENCIA` aceita referencia oficial validada pela Diretoria. Log
