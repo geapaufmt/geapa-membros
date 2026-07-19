@@ -17,6 +17,9 @@ var MEMBERS_VINCULO_CFG = Object.freeze({
     execute: 'membros:executar_solicitacoes_vinculo',
     override: 'membros:override_validacoes_vinculo'
   }),
+  mail: Object.freeze({
+    operationalRecipientsConfigKey: 'MEMBROS_VINCULO_EMAILS_OPERACIONAIS'
+  }),
   types: Object.freeze({
     suspension: 'SUSPENSAO_VOLUNTARIA',
     dismissal: 'DESLIGAMENTO_VOLUNTARIO'
