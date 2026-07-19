@@ -83,7 +83,13 @@ function membersVinculoAuditarRegistryV2(options) {
     { KEY: MEMBERS_VINCULO_CFG.registryKey, SPREADSHEET_ID: '<PESSOAS_V2_DB_DEV_SPREADSHEET_ID>', SHEET_NAME: MEMBERS_VINCULO_CFG.sheetName, DISPLAY_NAME: 'PESSOAS v2 - DEV', ATIVO: 'SIM', TYPE: 'BASE', AMBIENTE: 'DEV' },
     { KEY: MEMBERS_VINCULO_CFG.registryKey, SPREADSHEET_ID: '<PESSOAS_V2_DB_PROD_SPREADSHEET_ID>', SHEET_NAME: MEMBERS_VINCULO_CFG.sheetName, DISPLAY_NAME: 'PESSOAS v2 - PROD', ATIVO: 'SIM', TYPE: 'BASE', AMBIENTE: 'PROD' }
   ];
-  return { ok: true, dryRun: true, ambienteAuditado: opts.ambiente, writes: 0, registryRowsRecommended: recommendations, normativeRecommendation: { requiredForHomolog: true, options: ['Criar entrada DEV explicita para NORMAS_PARAMETROS_OPERACIONAIS.', 'Ou registrar a fonte institucional compartilhada e somente leitura explicitamente em DEV e PROD.'], forbidden: 'Fallback silencioso de HOMOLOG/DEV para PROD.' } };
+  return { ok: true, dryRun: true, ambienteAuditado: opts.ambiente, writes: 0, registryRowsRecommended: recommendations, normativeRecommendation: {
+    requiredForHomolog: true,
+    requiredHeaders: ['PARAMETRO_ID','VALOR','TIPO_VALOR','UNIDADE','BASE_LEGAL','MODULO_SISTEMA','VIGENTE','AMBIENTE'],
+    requiredRow: { PARAMETRO_ID: MEMBERS_VINCULO_CFG.normativeIds.dismissalFinalMinutes, VALOR: 'SIM', TIPO_VALOR: 'BOOLEANO', UNIDADE: 'NAO_APLICAVEL', BASE_LEGAL: 'NC01-2025-ART16-IV', MODULO_SISTEMA: 'GEAPA_MEMBROS', VIGENTE: 'SIM', AMBIENTE: opts.ambiente },
+    options: ['Criar entrada DEV explicita para NORMAS_PARAMETROS_OPERACIONAIS.', 'Ou registrar a fonte institucional compartilhada e somente leitura explicitamente em DEV e PROD.'],
+    forbidden: 'Fallback silencioso de HOMOLOG/DEV para PROD.'
+  } };
 }
 
 function membersVinculoInventariarLegadoDryRun(options) {

@@ -35,11 +35,11 @@ function membersVinculoDependencies_(context) {
       }
       return GEAPA_CORE.corePortalResolverUsuarioAtual({ email: email }, { origem: 'GEAPA_MEMBROS_VINCULO_V2' });
     },
-    resolveParameters: function(environment) {
+    resolveParameters: function(environment, parameterIds) {
       if (typeof GEAPA_CORE.coreResolverParametrosNormativosOperacionais !== 'function') {
         throw membersVinculoError_('CORE_PARAMETROS_NORMATIVOS_INDISPONIVEL', 'O parametro normativo esta indisponivel.', {});
       }
-      return GEAPA_CORE.coreResolverParametrosNormativosOperacionais([
+      return GEAPA_CORE.coreResolverParametrosNormativosOperacionais(parameterIds || [
         MEMBERS_VINCULO_CFG.normativeIds.suspensionMinimum,
         MEMBERS_VINCULO_CFG.normativeIds.dismissalPresentationBlock
       ], { ambiente: environment, moduloSistema: 'GEAPA_MEMBROS' });
@@ -181,10 +181,13 @@ function membersVinculoHistoryAppend_(record, status, actor, at, reason) {
   return JSON.stringify(history);
 }
 
-function membersVinculoReadParameters_(deps, environment) {
-  var parameters = deps.resolveParameters(environment);
+function membersVinculoReadParameters_(deps, environment, includeFinalMinutes) {
+  var ids = [MEMBERS_VINCULO_CFG.normativeIds.suspensionMinimum, MEMBERS_VINCULO_CFG.normativeIds.dismissalPresentationBlock];
+  if (includeFinalMinutes === true) ids.push(MEMBERS_VINCULO_CFG.normativeIds.dismissalFinalMinutes);
+  var parameters = deps.resolveParameters(environment, ids);
   membersVinculoValidateNormativeParameter_(parameters.SUSPENSAO_MINIMA, MEMBERS_VINCULO_CFG.normativeIds.suspensionMinimum);
   membersVinculoValidateNormativeParameter_(parameters.BLOQUEIO_DESLIGAMENTO_ANTES_APRESENTACAO, MEMBERS_VINCULO_CFG.normativeIds.dismissalPresentationBlock);
+  if (includeFinalMinutes === true) membersVinculoValidateFinalMinutesParameter_(parameters.DESLIGAMENTO_VOLUNTARIO_DECISAO_FINAL_EXIGE_ATA);
   return parameters;
 }
 
@@ -268,7 +271,7 @@ function membersVinculoCreateRequest_(type, payload, context, deps) {
   var open = membersVinculoFindOpenRequest_(queue.records, link.ID_VINCULO);
   if (open) throw membersVinculoError_('SOLICITACAO_VINCULO_ABERTA_EXISTENTE', 'Ja existe uma solicitacao aberta para este vinculo.', { idSolicitacao: open.ID_SOLICITACAO, status: open.STATUS_SOLICITACAO });
 
-  var parameters = membersVinculoReadParameters_(deps, environment);
+  var parameters = membersVinculoReadParameters_(deps, environment, type === MEMBERS_VINCULO_CFG.types.dismissal);
   var modality;
   var semesterRequired;
   if (type === MEMBERS_VINCULO_CFG.types.suspension) {
@@ -294,7 +297,7 @@ function membersVinculoCreateRequest_(type, payload, context, deps) {
     : { status: 'NAO_APLICAVEL', message: '' };
   var id = membersVinculoNewId_(deps);
   var actor = String(session.idPessoa || '').trim();
-  var snapshot = membersVinculoSnapshotParameters_(parameters, now);
+  var snapshot = membersVinculoSnapshotParameters_(parameters, now, type);
   var row = Object.assign({
     ID_SOLICITACAO: id, ID_PESSOA: session.idPessoa, ID_VINCULO: link.ID_VINCULO,
     TIPO_SOLICITACAO: type, MODALIDADE_SOLICITADA: modality, DATA_SOLICITACAO: now,

@@ -54,16 +54,19 @@ function membersAdminSolicitacaoVinculoDetalhe(payload, contexto) {
     var details = deps.openSource('PESSOAS', 'MEMBROS_DETALHES', ctx.environment, false).records.filter(function(record) { return String(record.ID_PESSOA || '') === String(request.ID_PESSOA); })[0] || {};
     var link = deps.openSource('PESSOAS', 'VINCULOS', ctx.environment, false).records.filter(function(record) { return String(record.ID_VINCULO || '') === String(request.ID_VINCULO); })[0] || {};
     var copy = Object.assign({}, request); delete copy.__rowNumber;
-    var parameters = membersVinculoReadParameters_(deps, ctx.environment);
+    var parameters = membersVinculoReadParameters_(deps, ctx.environment, membersVinculoToken_(request.TIPO_SOLICITACAO) === MEMBERS_VINCULO_CFG.types.dismissal);
     var normativeComparison = membersVinculoCompareNormativeSnapshots_(request, parameters);
+    var finalRequirements = membersVinculoResolveFinalMinutesRequirement_(request, normativeComparison, null);
     return membersVinculoEnvelopeOk_('SOLICITACAO_VINCULO_ADMIN_DETALHE', 'Detalhe carregado.', {
       solicitacao: copy,
       pessoa: { nome: String(base.NOME_COMPLETO || base.NOME_EXIBICAO || '').trim(), rgaMascarado: membersVinculoMaskRga_(details.RGA), emailMascarado: membersVinculoMaskEmail_(base.EMAIL_PRINCIPAL || base.EMAIL) },
       vinculo: { idVinculo: link.ID_VINCULO, tipo: link.TIPO_VINCULO, status: link.STATUS_VINCULO, dataInicio: link.DATA_INICIO, ativo: link.ATIVO },
       parametrosNormativos: { snapshot: {
         SUSPENSAO_MINIMA: { valor: request.SUSPENSAO_MINIMA_VALOR_SNAPSHOT, unidade: request.SUSPENSAO_MINIMA_UNIDADE_SNAPSHOT, baseLegal: request.SUSPENSAO_MINIMA_BASE_LEGAL_SNAPSHOT },
-        BLOQUEIO_DESLIGAMENTO_ANTES_APRESENTACAO: { valor: request.BLOQUEIO_DESLIGAMENTO_VALOR_SNAPSHOT, unidade: request.BLOQUEIO_DESLIGAMENTO_UNIDADE_SNAPSHOT, baseLegal: request.BLOQUEIO_DESLIGAMENTO_BASE_LEGAL_SNAPSHOT }
-      }, vigente: normativeComparison.current, divergencias: normativeComparison.differences }
+        BLOQUEIO_DESLIGAMENTO_ANTES_APRESENTACAO: { valor: request.BLOQUEIO_DESLIGAMENTO_VALOR_SNAPSHOT, unidade: request.BLOQUEIO_DESLIGAMENTO_UNIDADE_SNAPSHOT, baseLegal: request.BLOQUEIO_DESLIGAMENTO_BASE_LEGAL_SNAPSHOT },
+        DESLIGAMENTO_VOLUNTARIO_DECISAO_FINAL_EXIGE_ATA: { valor: request.ATA_DESLIGAMENTO_OBRIGATORIA_SNAPSHOT, tipoValor: request.ATA_DESLIGAMENTO_TIPO_VALOR_SNAPSHOT, unidade: 'NAO_APLICAVEL', baseLegal: request.ATA_DESLIGAMENTO_BASE_LEGAL_SNAPSHOT }
+      }, vigente: normativeComparison.current, divergencias: normativeComparison.differences },
+      requisitosDecisaoFinal: finalRequirements
     }, requestId);
   } catch (error) { return membersVinculoEnvelopeError_(error, requestId); }
 }
@@ -74,7 +77,7 @@ function membersVinculoAdminUpdateStatus_(payload, contexto, permission, targetS
     var output = deps.withLock(action, function() {
       var ctx = membersVinculoAdminContext_(contexto, deps, permission, true);
       var request = membersVinculoFindRequest_(ctx.queue.records, payload && payload.idSolicitacao);
-      membersVinculoAssertTransition_(request.STATUS_SOLICITACAO, targetStatus);
+      membersVinculoAssertRequestTransition_(request, targetStatus, action);
       var extra = extraBuilder ? extraBuilder(ctx, request, payload || {}, deps) : {};
       var updated = membersVinculoUpdate_(ctx.queue, request, Object.assign({
         STATUS_SOLICITACAO: targetStatus, ATUALIZADO_EM: ctx.now, ATUALIZADO_POR: ctx.actor,
@@ -120,12 +123,30 @@ function membersVinculoResolveSemesterById_(deps, environment, idSemestre) {
 }
 
 function membersVinculoApplyNormativeReview_(ctx, request, payload, deps) {
-  var parameters = membersVinculoReadParameters_(deps, ctx.environment);
+  var parameters = membersVinculoReadParameters_(deps, ctx.environment, membersVinculoToken_(request.TIPO_SOLICITACAO) === MEMBERS_VINCULO_CFG.types.dismissal);
   var comparison = membersVinculoCompareNormativeSnapshots_(request, parameters);
   var treatment = membersVinculoRequireTransitionTreatment_(comparison, payload, ctx.actor, membersVinculoHasPermission_(ctx.session, MEMBERS_VINCULO_CFG.permissions.override));
   var changes = { PARAMETROS_ATUAIS_JSON: JSON.stringify(comparison.current), DIVERGENCIA_PARAMETROS: comparison.divergent ? 'SIM' : 'NAO' };
   if (treatment.divergent) Object.assign(changes, { TRATAMENTO_TRANSICAO: treatment.treatment, TRATAMENTO_TRANSICAO_EM: ctx.now, TRATAMENTO_TRANSICAO_POR: ctx.actor, JUSTIFICATIVA_ADMINISTRATIVA_REFORCADA: treatment.justification });
-  return { parameters: parameters, comparison: comparison, treatment: treatment, changes: changes };
+  return { parameters: parameters, comparison: comparison, treatment: treatment, finalRequirements: membersVinculoResolveFinalMinutesRequirement_(request, comparison, treatment), changes: changes };
+}
+
+function membersVinculoRevalidateDismissalBeforeEffect_(ctx, request, parameters, deps) {
+  var links = deps.openSource('PESSOAS', 'VINCULOS', ctx.environment, false);
+  var link = membersVinculoFindCurrentLink_(links.records, request.ID_PESSOA);
+  if (String(link.ID_VINCULO || '') !== String(request.ID_VINCULO || '')) {
+    throw membersVinculoError_('VINCULO_SOLICITACAO_DIVERGENTE', 'O vinculo ativo atual difere do vinculo da solicitacao.', {});
+  }
+  var external = membersVinculoAssessExternal_(deps, { idPessoa: request.ID_PESSOA }, ctx.environment, MEMBERS_VINCULO_CFG.types.dismissal, null, parameters.BLOQUEIO_DESLIGAMENTO_ANTES_APRESENTACAO, ctx.now);
+  request.VALIDACAO_VINCULO_ATIVO = 'VALIDO';
+  if (membersVinculoToken_(external.apresentacao) !== 'NAO_VERIFICADO') request.VALIDACAO_APRESENTACAO = external.apresentacao;
+  if (membersVinculoToken_(external.arquivos) !== 'NAO_VERIFICADO') request.VALIDACAO_ARQUIVOS_PENDENTES = external.arquivos;
+  if (membersVinculoToken_(external.obrigacoes) !== 'NAO_VERIFICADO') request.VALIDACAO_OBRIGACOES = external.obrigacoes;
+  if (membersVinculoToken_(external.funcao) !== 'NAO_VERIFICADO') request.VALIDACAO_FUNCAO_ATIVA = external.funcao;
+  request.RESULTADO_VALIDACAO = [request.VALIDACAO_APRESENTACAO, request.VALIDACAO_ARQUIVOS_PENDENTES, request.VALIDACAO_OBRIGACOES, request.VALIDACAO_FUNCAO_ATIVA].some(function(value) { return ['NAO_VERIFICADO','PENDENTE','ATIVA','CONFLITO'].indexOf(membersVinculoToken_(value)) >= 0; }) ? 'PENDENTE_ANALISE_MANUAL' : 'VALIDADO';
+  request.MENSAGEM_VALIDACAO = external.mensagem || '';
+  request.VALIDADO_EM = ctx.now;
+  return external;
 }
 
 function membersVinculoDecisionChanges_(request, status, decision, observation, ctx, requestId) {
@@ -259,10 +280,10 @@ function membersVinculoExecuteEffect_(ctx, request, effect, payload, deps) {
 
 function membersAdminSolicitacaoVinculoIndeferir(payload, contexto) {
   return membersVinculoAdminUpdateStatus_(payload, contexto, MEMBERS_VINCULO_CFG.permissions.approve, MEMBERS_VINCULO_CFG.statuses.denied, 'SOLICITACAO_VINCULO_INDEFERIDA', function(ctx, request, data, deps) {
-    membersVinculoAssertFinalDecisionDocument_(request, data);
     var observation = String(data.obsDecisao || '').trim();
     if (!observation) throw membersVinculoError_('OBS_DECISAO_OBRIGATORIA', 'Informe o motivo do indeferimento.', {});
     var norm = membersVinculoApplyNormativeReview_(ctx, request, data, deps);
+    membersVinculoAssertFinalDecisionDocument_(request, data, norm.finalRequirements);
     return Object.assign({}, norm.changes, { DECISAO_DIRETORIA: 'INDEFERIDO', OBS_DECISAO: observation, ATA_REFERENCIA: String(data.ataReferencia || '').trim(), ID_ATA_DELIBERACAO: String(data.idAtaDeliberacao || '').trim(), DOCUMENTO_DECISAO_REFERENCIA: String(data.documentoDecisaoReferencia || '').trim(), DATA_DECISAO: ctx.now, DECIDIDO_POR: ctx.actor, ATIVO: 'NAO' });
   });
 }
@@ -303,10 +324,14 @@ function membersAdminSolicitacaoVinculoHomologarEfetivarDesligamento(payload, co
       if (!membersVinculoHasPermission_(ctx.session, MEMBERS_VINCULO_CFG.permissions.execute)) throw membersVinculoError_('ACESSO_NEGADO_EXECUCAO', 'A execucao exige permissao especifica.', { permissaoExigida: MEMBERS_VINCULO_CFG.permissions.execute });
       var request = membersVinculoFindRequest_(ctx.queue.records, payload && payload.idSolicitacao);
       if (membersVinculoToken_(request.TIPO_SOLICITACAO) !== MEMBERS_VINCULO_CFG.types.dismissal) throw membersVinculoError_('TIPO_SOLICITACAO_INCOMPATIVEL', 'A solicitacao nao e de desligamento.', {});
-      membersVinculoAssertTransition_(request.STATUS_SOLICITACAO, MEMBERS_VINCULO_CFG.statuses.executed);
-      membersVinculoAssertFinalDecisionDocument_(request, payload || {});
+      if (membersVinculoToken_(request.STATUS_SOLICITACAO) === MEMBERS_VINCULO_CFG.statuses.executed && String(request.ID_EVENTO_DESLIGAMENTO || '').trim()) {
+        return { request: request, idempotent: true };
+      }
+      membersVinculoAssertRequestTransition_(request, MEMBERS_VINCULO_CFG.statuses.executed, 'HOMOLOGAR_E_EFETIVAR_DESLIGAMENTO');
       if (payload.confirmacaoReforcada !== true) throw membersVinculoError_('CONFIRMACAO_REFORCADA_OBRIGATORIA', 'Confirme explicitamente a homologacao e efetivacao.', {});
       var norm = membersVinculoApplyNormativeReview_(ctx, request, payload || {}, deps);
+      membersVinculoAssertFinalDecisionDocument_(request, payload || {}, norm.finalRequirements);
+      membersVinculoRevalidateDismissalBeforeEffect_(ctx, request, norm.parameters, deps);
       var override = membersVinculoAssertFinalValidations_(ctx, request, payload || {});
       var effective = membersVinculoToday_(ctx.now).iso;
       if (membersVinculoToken_(request.MODALIDADE_SOLICITADA) === MEMBERS_VINCULO_CFG.modalities.dismissalSemesterEnd) {
@@ -323,9 +348,9 @@ function membersAdminSolicitacaoVinculoHomologarEfetivarDesligamento(payload, co
         { ATA_REFERENCIA: String(payload.ataReferencia || '').trim(), ID_ATA_DELIBERACAO: String(payload.idAtaDeliberacao || '').trim() }));
       var executed = membersVinculoExecuteEffect_(ctx, request, 'DESLIGAMENTO', Object.assign({}, payload, { dataEfetiva: effective }), deps);
       membersVinculoNotifyOwnerBestEffort_(deps, ctx.queue, executed, ctx.environment, 'DESLIGAMENTO_HOMOLOGADO_EXECUTADO', ctx.actor, ctx.now);
-      return executed;
+      return { request: executed, idempotent: false };
     });
-    return membersVinculoEnvelopeOk_('DESLIGAMENTO_HOMOLOGADO_E_EXECUTADO', 'Desligamento homologado por decisao humana e efetivado.', { idSolicitacao: result.ID_SOLICITACAO, status: result.STATUS_SOLICITACAO, idEvento: result.ID_EVENTO_DESLIGAMENTO }, requestId);
+    return membersVinculoEnvelopeOk_(result.idempotent ? 'DESLIGAMENTO_JA_EXECUTADO' : 'DESLIGAMENTO_HOMOLOGADO_E_EXECUTADO', result.idempotent ? 'O desligamento ja estava efetivado.' : 'Desligamento homologado por decisao humana e efetivado.', { idSolicitacao: result.request.ID_SOLICITACAO, status: result.request.STATUS_SOLICITACAO, idEvento: result.request.ID_EVENTO_DESLIGAMENTO, idempotente: result.idempotent }, requestId);
   } catch (error) { return membersVinculoEnvelopeError_(error, requestId); }
 }
 

@@ -87,10 +87,41 @@ function membersVinculoValidateNormativeParameter_(parameter, expectedId) {
   return parameter;
 }
 
-function membersVinculoSnapshotParameters_(parameters, now) {
+function membersVinculoNormativeBoolean_(value, parameterId) {
+  if (value === true || value === false) return value;
+  var token = membersVinculoToken_(value);
+  if (['SIM', 'TRUE', '1'].indexOf(token) >= 0) return true;
+  if (['NAO', 'FALSE', '0'].indexOf(token) >= 0) return false;
+  throw membersVinculoError_('PARAMETRO_NORMATIVO_VALOR_BOOLEANO_INVALIDO', 'O parametro normativo booleano esta indisponivel.', { parametroId: parameterId });
+}
+
+function membersVinculoValidateFinalMinutesParameter_(parameter) {
+  var expectedId = MEMBERS_VINCULO_CFG.normativeIds.dismissalFinalMinutes;
+  var id = membersVinculoToken_(parameter && (parameter.parametroId || parameter.PARAMETRO_ID));
+  if (id !== expectedId) throw membersVinculoError_('PARAMETRO_NORMATIVO_ID_INCOMPATIVEL', 'Parametro normativo inesperado.', { esperado: expectedId, recebido: id });
+  var vigente = parameter && (parameter.vigente != null ? parameter.vigente : parameter.VIGENTE);
+  if (!(vigente === true || membersVinculoToken_(vigente) === 'SIM')) throw membersVinculoError_('PARAMETRO_NORMATIVO_NAO_VIGENTE', 'O parametro normativo esta indisponivel.', { parametroId: id });
+  var tipo = membersVinculoToken_(parameter.tipoValor || parameter.TIPO_VALOR);
+  if (tipo !== 'BOOLEANO') throw membersVinculoError_('PARAMETRO_NORMATIVO_TIPO_INVALIDO', 'O parametro normativo deve possuir TIPO_VALOR BOOLEANO.', { parametroId: id, tipoValor: tipo });
+  var unidade = membersVinculoToken_(parameter.unidade || parameter.UNIDADE || 'NAO_APLICAVEL');
+  if (unidade !== 'NAO_APLICAVEL') throw membersVinculoError_('PARAMETRO_NORMATIVO_UNIDADE_INVALIDA', 'O parametro normativo booleano deve usar NAO_APLICAVEL.', { parametroId: id });
+  var baseLegal = String(parameter.baseLegal || parameter.BASE_LEGAL || '').trim();
+  if (!baseLegal) throw membersVinculoError_('PARAMETRO_NORMATIVO_BASE_LEGAL_AUSENTE', 'O parametro normativo nao possui BASE_LEGAL.', { parametroId: id });
+  var moduleSystem = String(parameter.moduloSistema || parameter.MODULO_SISTEMA || '').split(/[;,|]/).map(membersVinculoToken_).filter(Boolean);
+  if (!moduleSystem.some(function(token) { return ['GEAPA_MEMBROS', 'MEMBROS', 'VINCULOS_GEAPA', 'TODOS', 'SISTEMA_GEAPA'].indexOf(token) >= 0; })) {
+    throw membersVinculoError_('PARAMETRO_NORMATIVO_MODULO_INCOMPATIVEL', 'O parametro normativo esta indisponivel para o GEAPA Membros.', { parametroId: id });
+  }
+  var value = membersVinculoNormativeBoolean_(parameter.valor != null ? parameter.valor : parameter.VALOR, id);
+  if (value === false && baseLegal === 'NC01-2025-ART16-IV') {
+    throw membersVinculoError_('PARAMETRO_NORMATIVO_BASE_LEGAL_INCOMPATIVEL', 'A dispensa de ata exige nova BASE_LEGAL compativel com a alteracao normativa.', { parametroId: id, baseLegal: baseLegal });
+  }
+  return { parametroId: id, valor: value, tipoValor: 'BOOLEANO', unidade: 'NAO_APLICAVEL', baseLegal: baseLegal, vigente: true, moduloSistema: parameter.moduloSistema || parameter.MODULO_SISTEMA };
+}
+
+function membersVinculoSnapshotParameters_(parameters, now, requestType) {
   var suspension = membersVinculoValidateNormativeParameter_(parameters.SUSPENSAO_MINIMA, MEMBERS_VINCULO_CFG.normativeIds.suspensionMinimum);
   var block = membersVinculoValidateNormativeParameter_(parameters.BLOQUEIO_DESLIGAMENTO_ANTES_APRESENTACAO, MEMBERS_VINCULO_CFG.normativeIds.dismissalPresentationBlock);
-  return {
+  var snapshot = {
     PARAMETRO_SUSPENSAO_MINIMA_ID: suspension.parametroId,
     SUSPENSAO_MINIMA_VALOR_SNAPSHOT: Number(suspension.valor),
     SUSPENSAO_MINIMA_UNIDADE_SNAPSHOT: suspension.unidade,
@@ -101,6 +132,15 @@ function membersVinculoSnapshotParameters_(parameters, now) {
     BLOQUEIO_DESLIGAMENTO_BASE_LEGAL_SNAPSHOT: block.baseLegal,
     PARAMETROS_APLICADOS_EM: now || new Date()
   };
+  if (membersVinculoToken_(requestType) === MEMBERS_VINCULO_CFG.types.dismissal) {
+    var minutes = membersVinculoValidateFinalMinutesParameter_(parameters.DESLIGAMENTO_VOLUNTARIO_DECISAO_FINAL_EXIGE_ATA);
+    snapshot.PARAMETRO_ATA_DESLIGAMENTO_ID = minutes.parametroId;
+    snapshot.ATA_DESLIGAMENTO_OBRIGATORIA_SNAPSHOT = minutes.valor ? 'SIM' : 'NAO';
+    snapshot.ATA_DESLIGAMENTO_BASE_LEGAL_SNAPSHOT = minutes.baseLegal;
+    snapshot.ATA_DESLIGAMENTO_TIPO_VALOR_SNAPSHOT = minutes.tipoValor;
+    snapshot.ATA_DESLIGAMENTO_PARAMETRO_APLICADO_EM = now || new Date();
+  }
+  return snapshot;
 }
 
 function membersVinculoValidateSuspensionPeriod_(startValue, endValue, semester, suspensionParameter) {
@@ -124,12 +164,25 @@ function membersVinculoAssertTransition_(from, to) {
   return target;
 }
 
+function membersVinculoAssertRequestTransition_(request, to, action) {
+  var source = membersVinculoToken_(request.STATUS_SOLICITACAO);
+  var target = membersVinculoToken_(to);
+  var type = membersVinculoToken_(request.TIPO_SOLICITACAO);
+  var modality = membersVinculoToken_(request.MODALIDADE_SOLICITADA);
+  var operation = membersVinculoToken_(action);
+  if (source === MEMBERS_VINCULO_CFG.statuses.received && type === MEMBERS_VINCULO_CFG.types.dismissal) {
+    if (target === MEMBERS_VINCULO_CFG.statuses.executed && modality === MEMBERS_VINCULO_CFG.modalities.dismissalImmediate && operation === 'HOMOLOGAR_E_EFETIVAR_DESLIGAMENTO') return target;
+    if (target === MEMBERS_VINCULO_CFG.statuses.scheduledFinal && modality === MEMBERS_VINCULO_CFG.modalities.dismissalSemesterEnd && operation === 'ANALISE_PRELIMINAR_REGISTRADA') return target;
+  }
+  return membersVinculoAssertTransition_(source, target);
+}
+
 function membersVinculoRequiresFinalMinutes_(request) {
   return membersVinculoToken_(request.TIPO_SOLICITACAO) === MEMBERS_VINCULO_CFG.types.dismissal;
 }
 
-function membersVinculoAssertFinalDecisionDocument_(request, payload) {
-  if (!membersVinculoRequiresFinalMinutes_(request)) return true;
+function membersVinculoAssertFinalDecisionDocument_(request, payload, requirement) {
+  if (!membersVinculoRequiresFinalMinutes_(request) || !requirement || requirement.exigeAta !== true) return true;
   var ata = String((payload && payload.ataReferencia) || request.ATA_REFERENCIA || '').trim();
   var idAta = String((payload && payload.idAtaDeliberacao) || request.ID_ATA_DELIBERACAO || '').trim();
   if (!ata && !idAta) throw membersVinculoError_('ATA_DECISAO_FINAL_OBRIGATORIA', 'A decisao final do desligamento voluntario exige referencia oficial de ata.', {});
@@ -144,10 +197,12 @@ function membersVinculoAssertSecondSuspensionOverride_(payload, actor) {
 }
 
 function membersVinculoCurrentParameterView_(parameters) {
-  return {
+  var view = {
     SUSPENSAO_MINIMA: { valor: Number(parameters.SUSPENSAO_MINIMA.valor), unidade: parameters.SUSPENSAO_MINIMA.unidade, baseLegal: parameters.SUSPENSAO_MINIMA.baseLegal },
     BLOQUEIO_DESLIGAMENTO_ANTES_APRESENTACAO: { valor: Number(parameters.BLOQUEIO_DESLIGAMENTO_ANTES_APRESENTACAO.valor), unidade: parameters.BLOQUEIO_DESLIGAMENTO_ANTES_APRESENTACAO.unidade, baseLegal: parameters.BLOQUEIO_DESLIGAMENTO_ANTES_APRESENTACAO.baseLegal }
   };
+  if (parameters.DESLIGAMENTO_VOLUNTARIO_DECISAO_FINAL_EXIGE_ATA) view.DESLIGAMENTO_VOLUNTARIO_DECISAO_FINAL_EXIGE_ATA = membersVinculoValidateFinalMinutesParameter_(parameters.DESLIGAMENTO_VOLUNTARIO_DECISAO_FINAL_EXIGE_ATA);
+  return view;
 }
 
 function membersVinculoCompareNormativeSnapshots_(request, parameters) {
@@ -156,14 +211,50 @@ function membersVinculoCompareNormativeSnapshots_(request, parameters) {
     { id: 'SUSPENSAO_MINIMA', oldValue: Number(request.SUSPENSAO_MINIMA_VALOR_SNAPSHOT), oldUnit: membersVinculoToken_(request.SUSPENSAO_MINIMA_UNIDADE_SNAPSHOT), oldBase: String(request.SUSPENSAO_MINIMA_BASE_LEGAL_SNAPSHOT || '').trim(), now: current.SUSPENSAO_MINIMA },
     { id: 'BLOQUEIO_DESLIGAMENTO_ANTES_APRESENTACAO', oldValue: Number(request.BLOQUEIO_DESLIGAMENTO_VALOR_SNAPSHOT), oldUnit: membersVinculoToken_(request.BLOQUEIO_DESLIGAMENTO_UNIDADE_SNAPSHOT), oldBase: String(request.BLOQUEIO_DESLIGAMENTO_BASE_LEGAL_SNAPSHOT || '').trim(), now: current.BLOQUEIO_DESLIGAMENTO_ANTES_APRESENTACAO }
   ];
+  if (membersVinculoToken_(request.TIPO_SOLICITACAO) === MEMBERS_VINCULO_CFG.types.dismissal) {
+    var ataSnapshotAvailable = String(request.PARAMETRO_ATA_DESLIGAMENTO_ID || '').trim() && String(request.ATA_DESLIGAMENTO_OBRIGATORIA_SNAPSHOT || '').trim() && String(request.ATA_DESLIGAMENTO_BASE_LEGAL_SNAPSHOT || '').trim();
+    if (ataSnapshotAvailable) {
+      pairs.push({
+        id: MEMBERS_VINCULO_CFG.normativeIds.dismissalFinalMinutes,
+        oldValue: membersVinculoNormativeBoolean_(request.ATA_DESLIGAMENTO_OBRIGATORIA_SNAPSHOT, MEMBERS_VINCULO_CFG.normativeIds.dismissalFinalMinutes),
+        oldUnit: 'NAO_APLICAVEL',
+        oldType: membersVinculoToken_(request.ATA_DESLIGAMENTO_TIPO_VALOR_SNAPSHOT),
+        oldBase: String(request.ATA_DESLIGAMENTO_BASE_LEGAL_SNAPSHOT || '').trim(),
+        now: current.DESLIGAMENTO_VOLUNTARIO_DECISAO_FINAL_EXIGE_ATA
+      });
+    }
+  }
   var differences = [];
+  if (membersVinculoToken_(request.TIPO_SOLICITACAO) === MEMBERS_VINCULO_CFG.types.dismissal && !ataSnapshotAvailable) {
+    differences.push({ parametroId: MEMBERS_VINCULO_CFG.normativeIds.dismissalFinalMinutes, snapshot: { disponivel: false }, vigente: current.DESLIGAMENTO_VOLUNTARIO_DECISAO_FINAL_EXIGE_ATA, motivo: 'SNAPSHOT_AUSENTE_SOLICITACAO_ANTERIOR' });
+  }
   pairs.forEach(function(pair) {
-    var changedRule = pair.oldValue !== Number(pair.now.valor) || pair.oldUnit !== membersVinculoToken_(pair.now.unidade);
+    var currentValue = typeof pair.now.valor === 'boolean' ? pair.now.valor : Number(pair.now.valor);
+    var changedRule = pair.oldValue !== currentValue || pair.oldUnit !== membersVinculoToken_(pair.now.unidade) || (pair.oldType && pair.oldType !== membersVinculoToken_(pair.now.tipoValor));
     var changedBase = pair.oldBase !== String(pair.now.baseLegal || '').trim();
     if (changedRule && !changedBase) throw membersVinculoError_('PARAMETRO_NORMATIVO_SEM_ATUALIZACAO_BASE_LEGAL', 'O valor normativo mudou sem nova BASE_LEGAL.', { parametroId: pair.id, snapshot: { valor: pair.oldValue, unidade: pair.oldUnit, baseLegal: pair.oldBase }, vigente: pair.now });
-    if (changedRule || changedBase) differences.push({ parametroId: pair.id, snapshot: { valor: pair.oldValue, unidade: pair.oldUnit, baseLegal: pair.oldBase }, vigente: pair.now });
+    if (changedRule || changedBase) differences.push({ parametroId: pair.id, snapshot: { valor: pair.oldValue, unidade: pair.oldUnit, tipoValor: pair.oldType || 'NUMERO', baseLegal: pair.oldBase }, vigente: pair.now });
   });
   return Object.freeze({ divergent: differences.length > 0, differences: differences, current: current });
+}
+
+function membersVinculoResolveFinalMinutesRequirement_(request, comparison, treatment) {
+  if (!membersVinculoRequiresFinalMinutes_(request)) return { exigeAta: false, origemRegra: 'NAO_APLICAVEL', possuiDivergencia: false };
+  var snapshot = {
+    disponivel: !!String(request.PARAMETRO_ATA_DESLIGAMENTO_ID || '').trim(),
+    valor: String(request.ATA_DESLIGAMENTO_OBRIGATORIA_SNAPSHOT || '').trim() ? membersVinculoNormativeBoolean_(request.ATA_DESLIGAMENTO_OBRIGATORIA_SNAPSHOT, MEMBERS_VINCULO_CFG.normativeIds.dismissalFinalMinutes) : null,
+    tipoValor: membersVinculoToken_(request.ATA_DESLIGAMENTO_TIPO_VALOR_SNAPSHOT),
+    baseLegal: String(request.ATA_DESLIGAMENTO_BASE_LEGAL_SNAPSHOT || '').trim()
+  };
+  var current = comparison.current.DESLIGAMENTO_VOLUNTARIO_DECISAO_FINAL_EXIGE_ATA;
+  var ataDifference = comparison.differences.filter(function(item) { return item.parametroId === MEMBERS_VINCULO_CFG.normativeIds.dismissalFinalMinutes; })[0] || null;
+  if (ataDifference && (!treatment || !treatment.treatment)) {
+    return { exigeAta: null, parametroId: MEMBERS_VINCULO_CFG.normativeIds.dismissalFinalMinutes, baseLegal: '', origemRegra: 'TRATAMENTO_TRANSICAO_PENDENTE', possuiDivergencia: true, exigeTratamentoTransicao: true, snapshot: snapshot, vigente: current };
+  }
+  var useSnapshot = ataDifference && treatment.treatment === 'APLICAR_SNAPSHOT';
+  if (useSnapshot && !snapshot.disponivel) throw membersVinculoError_('PARAMETRO_ATA_DESLIGAMENTO_SNAPSHOT_AUSENTE', 'Esta solicitacao anterior nao possui snapshot da regra de ata. A decisao exige adocao explicita da regra vigente.', { parametroId: MEMBERS_VINCULO_CFG.normativeIds.dismissalFinalMinutes });
+  var selected = useSnapshot ? snapshot : current;
+  return { exigeAta: selected.valor === true, parametroId: MEMBERS_VINCULO_CFG.normativeIds.dismissalFinalMinutes, baseLegal: selected.baseLegal, origemRegra: useSnapshot ? 'SNAPSHOT' : 'VIGENTE', possuiDivergencia: !!ataDifference, exigeTratamentoTransicao: false, snapshot: snapshot, vigente: current };
 }
 
 function membersVinculoRequireTransitionTreatment_(comparison, payload, actor, hasOverridePermission) {
