@@ -15,7 +15,9 @@ var MEMBERS_VINCULO_CFG = Object.freeze({
     analyze: 'membros:analisar_solicitacoes_vinculo',
     approve: 'membros:homologar_solicitacoes_vinculo',
     execute: 'membros:executar_solicitacoes_vinculo',
-    override: 'membros:override_validacoes_vinculo'
+    override: 'membros:override_validacoes_vinculo',
+    feedbackRead: 'membros:analisar_solicitacoes_vinculo',
+    feedbackIdentify: 'membros:ver_avaliacoes_egressos_identificadas'
   }),
   mail: Object.freeze({
     operationalRecipientsConfigKey: 'MEMBROS_VINCULO_EMAILS_OPERACIONAIS'
@@ -48,6 +50,9 @@ var MEMBERS_VINCULO_CFG = Object.freeze({
     'RECEBIDO', 'EM_ANALISE', 'AGUARDANDO_COMPLEMENTO',
     'AGENDADO_PARA_ANALISE_FINAL', 'PRONTO_PARA_ANALISE_FINAL',
     'HOMOLOGADO_AGUARDANDO_INICIO', 'SUSPENSAO_ATIVA', 'ERRO_EXECUCAO'
+  ]),
+  terminalStatuses: Object.freeze([
+    'CANCELADO_PELO_MEMBRO', 'CANCELADO_PELA_DIRETORIA', 'INDEFERIDO', 'EXECUTADO', 'CONCLUIDO'
   ]),
   memberCancellableStatuses: Object.freeze([
     'RECEBIDO', 'EM_ANALISE', 'AGUARDANDO_COMPLEMENTO',
