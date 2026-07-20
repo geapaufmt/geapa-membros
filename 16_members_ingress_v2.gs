@@ -171,3 +171,24 @@ function membersIngressExecute_(payload, contexto) {
 
 function membersAdminIngressosMembrosCadastrar(payload, contexto) { return membersIngressExecute_(payload, contexto); }
 function membersAdminIngressosMembrosReprocessar(payload, contexto) { return membersIngressExecute_(payload, contexto); }
+
+function membersAdminIngressosMembrosCatalogos(payload, contexto) {
+  var deps = membersIngressDependencies_(contexto || {}); var requestId = membersVinculoRequestId_(contexto || {}, deps);
+  try {
+    var environment = membersIngressFeatureEnabled_(contexto || {});
+    membersVinculoResolveSession_(contexto || {}, deps, MEMBERS_INGRESS_PERMISSION);
+    var source = deps.openSource('PESSOAS', 'CURSOS_CATALOGO', environment, false);
+    var courses = (source.records || []).filter(function(row) {
+      return membersVinculoIsYes_(row.ATIVO) && membersVinculoIsYes_(row.PERMITE_CADASTRO);
+    }).map(function(row) {
+      return {
+        cursoId: String(row.CURSO_ID || '').trim(), nomeCurso: String(row.NOME_CURSO || '').trim(),
+        instituicao: String(row.INSTITUICAO || '').trim(), campus: String(row.CAMPUS || '').trim(),
+        nivel: String(row.NIVEL || '').trim(), ordemExibicao: Number(row.ORDEM_EXIBICAO || 9999)
+      };
+    }).filter(function(row) { return row.cursoId && row.nomeCurso; }).sort(function(a, b) {
+      return a.ordemExibicao - b.ordemExibicao || a.nomeCurso.localeCompare(b.nomeCurso);
+    });
+    return membersVinculoEnvelopeOk_('CATALOGOS_INGRESSO_MEMBRO_OK', 'Catalogos disponiveis.', { cursos: courses }, requestId);
+  } catch (error) { return membersVinculoEnvelopeError_(error, requestId); }
+}

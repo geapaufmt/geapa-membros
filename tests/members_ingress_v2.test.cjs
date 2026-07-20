@@ -137,6 +137,15 @@ test('feature permanece bloqueada em PROD sem acessar DEV', () => {
   const f = factory({ environment: 'PROD' }); const result = sandbox.membersAdminIngressosMembrosCadastrar(payload(), context(f.deps, { ambienteDadosV2: 'PROD' })); assert.equal(result.code, 'CADASTRO_MEMBRO_INDISPONIVEL');
 });
 
+test('catalogo administrativo retorna somente cursos ativos e permitidos, com autorizacao backend', () => {
+  const f = factory();
+  f.store['PESSOAS:CURSOS_CATALOGO'].records.push({ CURSO_ID: 'INATIVO', NOME_CURSO: 'Curso inativo', ATIVO: 'NAO', PERMITE_CADASTRO: 'SIM' });
+  const result = sandbox.membersAdminIngressosMembrosCatalogos({}, context(f.deps));
+  assert.equal(result.ok, true); assert.deepEqual(Array.from(result.data.cursos, (row) => row.cursoId), ['AGRONOMIA_UFMT_SINOP', 'OUTRO']);
+  const denied = factory({ session: { autenticado: true, idPessoa: 'P-SEC', permissoes: [] } });
+  assert.equal(sandbox.membersAdminIngressosMembrosCatalogos({}, context(denied.deps)).code, 'ACESSO_NEGADO');
+});
+
 test('fluxo nao cria portalUsers nem menciona processo seletivo como operacao', () => {
   const f = factory(); sandbox.membersAdminIngressosMembrosCadastrar(payload(), context(f.deps)); assert.equal(Object.keys(f.store).some((key) => key.includes('portalUsers')), false);
   const sourceCode = fs.readFileSync(path.join(root, '16_members_ingress_v2.gs'), 'utf8'); assert.equal(/avaliacao de candidatos|classificacao|lista de espera/i.test(sourceCode), false);
