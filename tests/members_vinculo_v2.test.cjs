@@ -12,6 +12,7 @@ const files = [
   '12_members_vinculo_v2_service.gs',
   '13_members_vinculo_v2_admin.gs',
   '14_members_vinculo_v2_jobs.gs',
+  '15_members_egress_feedback.gs',
   '51_members_vinculo_v2_setup.gs'
 ];
 const sandbox = { console };
@@ -71,6 +72,11 @@ const queueHeaders = Array.from(sandbox.MEMBERS_VINCULO_HEADERS);
 const linkHeaders = ['ID_VINCULO','ID_PESSOA','TIPO_VINCULO','STATUS_VINCULO','DATA_INICIO','DATA_FIM','MOTIVO_FIM','LINK_ATA_OU_PROCESSO','ATIVO'];
 const eventHeaders = ['ID_EVENTO_MEMBRO','ID_PESSOA','ID_VINCULO','TIPO_EVENTO','DATA_EVENTO','STATUS_EVENTO','MODULO_ORIGEM','CHAVE_ORIGEM','OBSERVACOES','ATUALIZADO_EM','PROCESSADO_POR_MODULO','DATA_PROCESSAMENTO','ERRO_PROCESSAMENTO'];
 const semesterHeaders = ['ID_SEMESTRE','DATA_INICIO','DATA_FIM','STATUS'];
+const inviteHeaders = [
+  'ID_CONVITE','ID_EVENTO_DESLIGAMENTO','ID_SOLICITACAO','ID_PESSOA','EMAIL_DESTINO_SNAPSHOT','TOKEN_HASH','STATUS_CONVITE',
+  'CONVITE_GERADO_EM','CONVITE_ENVIADO_EM','EXPIRA_EM','RESPONDIDO_EM','REENVIOS','ULTIMO_REENVIO_EM','CRIADO_EM','ATUALIZADO_EM','AUDITORIA_JSON'
+];
+const responseHeaders = ['ID_RESPOSTA','ID_CONVITE','NOTA_GERAL','ASPECTOS_POSITIVOS','ASPECTOS_A_MELHORAR','SUGESTOES','MOTIVO_DESLIGAMENTO_COMPLEMENTAR','AUTORIZA_USO_ANONIMO','DEPOIMENTO_AUTORIZADO','RESPONDIDO_EM','VERSAO_FORMULARIO','CRIADO_EM','AUDITORIA_JSON'];
 
 function activeSemester(overrides = {}) {
   return Object.assign({ ID_SEMESTRE: 'SEM-TESTE', DATA_INICIO: '2026-01-05', DATA_FIM: '2026-06-25', STATUS: 'ATIVO' }, overrides);
@@ -90,6 +96,12 @@ function baseRequest(overrides = {}, parameters = normative()) {
   }, snapshot, overrides);
 }
 
+function testHash(value) {
+  let hash = 2166136261;
+  for (const char of String(value || '')) { hash ^= char.charCodeAt(0); hash = Math.imul(hash, 16777619); }
+  return `test-hash-${(hash >>> 0).toString(16)}`;
+}
+
 function storeFactory(options = {}) {
   const parameters = options.parameters || normative();
   const store = {
@@ -101,6 +113,8 @@ function storeFactory(options = {}) {
     'VIGENCIAS:SEMESTRES': source(semesterHeaders, options.semesters || [activeSemester()]),
     'ATIVIDADES:APRESENTACOES': source(['ID_PESSOA','DATA_APRESENTACAO','STATUS'], options.presentations || []),
     'ATIVIDADES:ARQUIVOS': source(['ID_PESSOA','STATUS'], options.files || [])
+    ,'PESSOAS:CONVITES_AVALIACAO_EGRESSOS': source(inviteHeaders, options.invites || [])
+    ,'PESSOAS:RESPOSTAS_AVALIACAO_EGRESSOS': source(responseHeaders, options.responses || [])
   };
   const access = [];
   let uuid = 0;
@@ -120,6 +134,8 @@ function storeFactory(options = {}) {
     },
     assessExternal: options.assessExternal,
     notify: options.notify || (() => ({ ok: true })),
+    hash: options.hash || testHash,
+    queueEgressMail: options.queueEgressMail || (() => ({ ok: true })),
     recalculateSummary: options.recalculateSummary || (() => { summaries += 1; return { ok: true }; })
   };
   return { store, deps, access, parameters, get summaries() { return summaries; } };
@@ -287,6 +303,88 @@ test('96 integracao de vinculo nao referencia contrato legado inexistente', () =
   const service = fs.readFileSync(path.join(root, '12_members_vinculo_v2_service.gs'), 'utf8');
   assert.equal(service.includes('coreMailEnqueue'), false);
   assert.equal(service.includes('coreMailQueueOutgoing'), true);
+});
+
+test('97 estados terminais sao classificados para visualizacao somente leitura', () => {
+  ['CANCELADO_PELO_MEMBRO','CANCELADO_PELA_DIRETORIA','INDEFERIDO','EXECUTADO','CONCLUIDO'].forEach((status) => {
+    const item = sandbox.membersVinculoAdminSanitizeList_(baseRequest({ STATUS_SOLICITACAO: status }));
+    assert.equal(item.terminal, true); assert.equal(item.acaoDisponivel, 'VISUALIZAR');
+  });
+  assert.equal(sandbox.membersVinculoAdminSanitizeList_(baseRequest({ STATUS_SOLICITACAO: 'RECEBIDO' })).acaoDisponivel, 'ANALISAR');
+});
+
+test('98 cancelado pelo membro nao transiciona para analise, indeferimento ou execucao', () => {
+  ['EM_ANALISE','INDEFERIDO','EXECUTADO'].forEach((target) => code(() => sandbox.membersVinculoAssertTransition_('CANCELADO_PELO_MEMBRO', target), 'TRANSICAO_STATUS_INVALIDA'));
+});
+
+test('99 cancelado pela Diretoria nao possui transicoes', () => {
+  ['EM_ANALISE','INDEFERIDO','EXECUTADO'].forEach((target) => code(() => sandbox.membersVinculoAssertTransition_('CANCELADO_PELA_DIRETORIA', target), 'TRANSICAO_STATUS_INVALIDA'));
+});
+
+test('100 requisicao direta contra estado terminal nao gera efeito parcial ou notificacao', () => {
+  let notifications = 0;
+  const original = baseRequest({ STATUS_SOLICITACAO: 'CANCELADO_PELO_MEMBRO', ATIVO: 'NAO' });
+  const f = storeFactory({ requests: [original], session: adminSession(), notify: () => { notifications += 1; return { ok: true }; } });
+  const result = sandbox.membersAdminSolicitacaoVinculoIniciarAnalise({ idSolicitacao: 'SVI-TESTE' }, memberContext(f.deps));
+  assert.equal(result.code, 'TRANSICAO_STATUS_INVALIDA');
+  assert.equal(f.store['PESSOAS:SOLICITACOES_VINCULO'].records[0].STATUS_SOLICITACAO, 'CANCELADO_PELO_MEMBRO');
+  assert.equal(notifications, 0); assert.equal(f.store['PESSOAS:EVENTOS'].records.length, 0);
+});
+
+test('101 convite e criado somente apos desligamento executado e evento homologado', () => {
+  let rawToken = '';
+  const request = baseRequest({ STATUS_SOLICITACAO: 'EXECUTADO', ID_EVENTO_DESLIGAMENTO: 'EV-1', ATIVO: 'NAO' });
+  const f = storeFactory({
+    requests: [request], links: [{ ID_VINCULO: 'V-1', ID_PESSOA: 'P-1', STATUS_VINCULO: 'DESLIGADO', ATIVO: 'NAO' }],
+    events: [{ ID_EVENTO_MEMBRO: 'EV-1', ID_PESSOA: 'P-1', ID_VINCULO: 'V-1', TIPO_EVENTO: 'DESLIGAMENTO_VOLUNTARIO', STATUS_EVENTO: 'HOMOLOGADO' }],
+    queueEgressMail: (_invite, token) => { rawToken = token; return { ok: true }; }
+  });
+  const result = sandbox.membersEgressRegisterInvitationBestEffort_({ environment: 'DEV', now: f.deps.now(), actor: 'P-ADMIN' }, request, f.deps);
+  assert.equal(result.ok, true); assert.equal(f.store['PESSOAS:CONVITES_AVALIACAO_EGRESSOS'].records.length, 1);
+  const invite = f.store['PESSOAS:CONVITES_AVALIACAO_EGRESSOS'].records[0];
+  assert.equal(invite.STATUS_CONVITE, 'ENVIADO'); assert.notEqual(invite.TOKEN_HASH, rawToken);
+  assert.equal(JSON.stringify(invite).includes(rawToken), false);
+});
+
+test('102 falha do convite nao reverte desligamento e fica reprocessavel', () => {
+  const request = baseRequest({ STATUS_SOLICITACAO: 'EXECUTADO', ID_EVENTO_DESLIGAMENTO: 'EV-1', ATIVO: 'NAO' });
+  const f = storeFactory({
+    requests: [request], links: [{ ID_VINCULO: 'V-1', ID_PESSOA: 'P-1', STATUS_VINCULO: 'DESLIGADO', ATIVO: 'NAO' }],
+    events: [{ ID_EVENTO_MEMBRO: 'EV-1', TIPO_EVENTO: 'DESLIGAMENTO_VOLUNTARIO', STATUS_EVENTO: 'HOMOLOGADO' }],
+    queueEgressMail: () => { throw Object.assign(new Error('mail fora'), { code: 'MAIL_TESTE' }); }
+  });
+  const result = sandbox.membersEgressRegisterInvitationBestEffort_({ environment: 'DEV', now: f.deps.now(), actor: 'P-ADMIN' }, request, f.deps);
+  assert.equal(result.ok, true); assert.equal(request.STATUS_SOLICITACAO, 'EXECUTADO');
+  assert.equal(f.store['PESSOAS:CONVITES_AVALIACAO_EGRESSOS'].records[0].STATUS_CONVITE, 'ERRO_ENVIO');
+});
+
+test('103 token invalido, expirado e respondido recebem codigos especificos', () => {
+  const validHash = testHash('x'.repeat(40));
+  const baseInvite = { ID_CONVITE: 'CVE-1', TOKEN_HASH: validHash, STATUS_CONVITE: 'ENVIADO', EXPIRA_EM: new Date(2026, 1, 9), AUDITORIA_JSON: '[]' };
+  let f = storeFactory({ invites: [baseInvite] });
+  let context = memberContext(f.deps, { featureFlags: { ENABLE_EGRESS_FEEDBACK: true } });
+  assert.equal(sandbox.membersAvaliacaoEgressoConsultarPorToken({ token: 'y'.repeat(40) }, context).code, 'CONVITE_AVALIACAO_INVALIDO');
+  assert.equal(sandbox.membersAvaliacaoEgressoConsultarPorToken({ token: 'x'.repeat(40) }, context).code, 'CONVITE_AVALIACAO_EXPIRADO');
+  f = storeFactory({ invites: [Object.assign({}, baseInvite, { STATUS_CONVITE: 'RESPONDIDO', EXPIRA_EM: new Date(2026, 4, 9) })] });
+  context = memberContext(f.deps, { featureFlags: { ENABLE_EGRESS_FEEDBACK: true } });
+  assert.equal(sandbox.membersAvaliacaoEgressoConsultarPorToken({ token: 'x'.repeat(40) }, context).code, 'CONVITE_AVALIACAO_RESPONDIDO');
+});
+
+test('104 resposta e unica, nao grava ID_PESSOA e marca convite respondido', () => {
+  const token = 'z'.repeat(40);
+  const f = storeFactory({ invites: [{ ID_CONVITE: 'CVE-1', TOKEN_HASH: testHash(token), STATUS_CONVITE: 'ENVIADO', EXPIRA_EM: new Date(2026, 4, 9), AUDITORIA_JSON: '[]' }] });
+  const context = memberContext(f.deps, { featureFlags: { ENABLE_EGRESS_FEEDBACK: true } });
+  const first = sandbox.membersAvaliacaoEgressoResponder({ token, notaGeral: 5, aspectosPositivos: 'Aprendizado', autorizaUsoAnonimo: true }, context);
+  assert.equal(first.ok, true); assert.equal(f.store['PESSOAS:RESPOSTAS_AVALIACAO_EGRESSOS'].records.length, 1);
+  assert.equal(Object.hasOwn(f.store['PESSOAS:RESPOSTAS_AVALIACAO_EGRESSOS'].records[0], 'ID_PESSOA'), false);
+  assert.equal(f.store['PESSOAS:CONVITES_AVALIACAO_EGRESSOS'].records[0].STATUS_CONVITE, 'RESPONDIDO');
+  assert.equal(sandbox.membersAvaliacaoEgressoResponder({ token, notaGeral: 5 }, context).code, 'CONVITE_AVALIACAO_RESPONDIDO');
+});
+
+test('105 feature de avaliacao permanece bloqueada em PROD', () => {
+  const f = storeFactory();
+  const context = memberContext(f.deps, { ambienteDadosV2: 'PROD', featureFlags: { ENABLE_EGRESS_FEEDBACK: true } });
+  assert.equal(sandbox.membersAvaliacaoEgressoConsultarPorToken({ token: 'x'.repeat(40) }, context).code, 'AVALIACAO_EGRESSO_INDISPONIVEL');
 });
 
 let passed = 0;
