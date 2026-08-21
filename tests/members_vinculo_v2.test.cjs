@@ -12,6 +12,8 @@ const files = [
   '12_members_vinculo_v2_service.gs',
   '13_members_vinculo_v2_admin.gs',
   '14_members_vinculo_v2_jobs.gs',
+  '15_members_egress_feedback.gs',
+  '16_members_ingress_v2.gs',
   '51_members_vinculo_v2_setup.gs'
 ];
 const sandbox = { console };
@@ -287,6 +289,106 @@ test('96 integracao de vinculo nao referencia contrato legado inexistente', () =
   const service = fs.readFileSync(path.join(root, '12_members_vinculo_v2_service.gs'), 'utf8');
   assert.equal(service.includes('coreMailEnqueue'), false);
   assert.equal(service.includes('coreMailQueueOutgoing'), true);
+});
+
+function ingressPayload(extra = {}) {
+  return Object.assign({
+    chaveIdempotencia: 'ingresso-teste-0001', modalidadeCadastro: 'COMPLETO',
+    nomeCompleto: 'Pessoa Nova Teste', nomeExibicao: 'Pessoa Nova',
+    emailPrincipal: 'PESSOA.NOVA@example.invalid', telefone: '(65) 99999-1234',
+    rga: '2026.0001', cursoId: 'CURSO-TESTE', dataIngresso: '2026-03-10',
+    semestreEntrada: '2026/1', formaIngresso: 'PROCESSO_SELETIVO',
+    dadosComplementares: { dataNascimento: '13/12/2004', instagram: '@pessoa.nova' }
+  }, extra);
+}
+
+test('97 convite cancelado nao pode registrar avaliacao', () => {
+  const token = 'token-de-avaliacao-com-comprimento-suficiente';
+  const invites = source(Array.from(sandbox.MEMBERS_EGRESS_INVITES_HEADERS), [{
+    ID_CONVITE: 'CVE-1', TOKEN_HASH: `HASH:${token}`, STATUS_CONVITE: 'CANCELADO', EXPIRA_EM: '2026-04-30'
+  }]);
+  const responses = source(Array.from(sandbox.MEMBERS_EGRESS_RESPONSES_HEADERS), []);
+  const deps = {
+    now: () => new Date(2026, 2, 10, 12), uuid: () => 'uuid-egresso-abcdefghijklmnopqrstuvwxyz',
+    hash: (value) => `HASH:${value}`, withLock: (_key, callback) => callback(),
+    openSource: (_domain, logical) => logical === 'CONVITES_AVALIACAO_EGRESSOS' ? invites : responses
+  };
+  const result = sandbox.membersAvaliacaoEgressoResponder(
+    { token, notaGeral: 5 },
+    { ambienteDadosV2: 'DEV', featureFlags: { ENABLE_EGRESS_FEEDBACK: true }, requestId: 'req-egresso', __deps: deps }
+  );
+  assert.equal(result.code, 'CONVITE_AVALIACAO_INVALIDO');
+  assert.equal(responses.records.length, 0);
+  assert.equal(invites.records[0].STATUS_CONVITE, 'CANCELADO');
+});
+
+function responderConviteNoEstado(status) {
+  const token = `token-${status.toLowerCase()}-com-comprimento-suficiente`;
+  const invites = source(Array.from(sandbox.MEMBERS_EGRESS_INVITES_HEADERS), [{
+    ID_CONVITE: `CVE-${status}`, TOKEN_HASH: `HASH:${token}`, STATUS_CONVITE: status, EXPIRA_EM: '2026-04-30'
+  }]);
+  const responses = source(Array.from(sandbox.MEMBERS_EGRESS_RESPONSES_HEADERS), []);
+  const deps = {
+    now: () => new Date(2026, 2, 10, 12), uuid: () => 'uuid-egresso-estado-abcdefghijklmnopqrstuvwxyz',
+    hash: (value) => `HASH:${value}`, withLock: (_key, callback) => callback(),
+    openSource: (_domain, logical) => logical === 'CONVITES_AVALIACAO_EGRESSOS' ? invites : responses
+  };
+  const result = sandbox.membersAvaliacaoEgressoResponder(
+    { token, notaGeral: 5 },
+    { ambienteDadosV2: 'DEV', featureFlags: { ENABLE_EGRESS_FEEDBACK: true }, requestId: `req-${status}`, __deps: deps }
+  );
+  return { result, invites, responses };
+}
+
+test('98 convite enviado registra uma unica avaliacao', () => {
+  const attempt = responderConviteNoEstado('ENVIADO');
+  assert.equal(attempt.result.ok, true);
+  assert.equal(attempt.responses.records.length, 1);
+  assert.equal(attempt.invites.records[0].STATUS_CONVITE, 'RESPONDIDO');
+});
+
+test('99 convite respondido preserva resposta unica', () => {
+  const attempt = responderConviteNoEstado('RESPONDIDO');
+  assert.equal(attempt.result.code, 'CONVITE_AVALIACAO_RESPONDIDO');
+  assert.equal(attempt.responses.records.length, 0);
+});
+
+['ERRO_ENVIO', 'PENDENTE_ENVIO', 'ESTADO_DESCONHECIDO'].forEach((status, index) => {
+  test(`${100 + index} convite ${status} nao pode registrar avaliacao`, () => {
+    const attempt = responderConviteNoEstado(status);
+    assert.equal(attempt.result.code, 'CONVITE_AVALIACAO_INVALIDO');
+    assert.equal(attempt.responses.records.length, 0);
+    assert.equal(attempt.invites.records[0].STATUS_CONVITE, status);
+  });
+});
+
+test('103 ingresso normaliza campos cadastrais canonicos', () => {
+  const normalized = sandbox.membersIngressValidatePayload_(ingressPayload());
+  assert.equal(normalized.email, 'pessoa.nova@example.invalid');
+  assert.equal(normalized.telefone, '+5565999991234');
+  assert.equal(normalized.rga, '20260001');
+  assert.equal(normalized.complementares.dataNascimento, '2004-12-13');
+  assert.equal(normalized.complementares.instagram, 'pessoa.nova');
+});
+
+test('104 ingresso rejeita telefone invalido', () => {
+  code(() => sandbox.membersIngressValidatePayload_(ingressPayload({ telefone: '1234' })), 'TELEFONE_INVALIDO');
+});
+
+test('105 ingresso rejeita data de nascimento inexistente ou futura', () => {
+  code(() => sandbox.membersIngressValidatePayload_(ingressPayload({ dadosComplementares: { dataNascimento: '31/02/2004' } })), 'DATA_NASCIMENTO_INVALIDA');
+  code(() => sandbox.membersIngressValidatePayload_(ingressPayload({ dadosComplementares: { dataNascimento: '2999-01-01' } })), 'DATA_NASCIMENTO_INVALIDA');
+});
+
+test('106 ingresso rejeita instagram invalido', () => {
+  code(() => sandbox.membersIngressValidatePayload_(ingressPayload({ dadosComplementares: { instagram: 'usuario..invalido' } })), 'INSTAGRAM_INVALIDO');
+});
+
+test('107 ingresso aceita complementares opcionais ausentes sem campos arbitrarios', () => {
+  const normalized = sandbox.membersIngressValidatePayload_(ingressPayload({ modalidadeCadastro: 'RAPIDO', dadosComplementares: { campoInterno: 'nao copiar' } }));
+  assert.equal(normalized.complementares.dataNascimento, '');
+  assert.equal(normalized.complementares.instagram, '');
+  assert.equal(Object.hasOwn(normalized.complementares, 'campoInterno'), false);
 });
 
 let passed = 0;

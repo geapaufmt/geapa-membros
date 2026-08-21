@@ -146,7 +146,9 @@ function membersAvaliacaoEgressoResponder(payload, contexto) {
     return deps.withLock('RESPONDER_AVALIACAO_EGRESSO', function() {
       var invites = deps.openSource('PESSOAS', 'CONVITES_AVALIACAO_EGRESSOS', environment, true);
       var invite = membersEgressFindByToken_(invites, String(payload && payload.token || '').trim(), deps);
-      if (membersVinculoToken_(invite.STATUS_CONVITE) === 'RESPONDIDO') throw membersVinculoError_('CONVITE_AVALIACAO_RESPONDIDO', 'Esta avaliacao ja foi respondida.', {});
+      var status = membersVinculoToken_(invite.STATUS_CONVITE);
+      if (status === 'RESPONDIDO') throw membersVinculoError_('CONVITE_AVALIACAO_RESPONDIDO', 'Esta avaliacao ja foi respondida.', {});
+      if (status !== 'ENVIADO') throw membersVinculoError_('CONVITE_AVALIACAO_INVALIDO', 'Convite invalido ou indisponivel.', {});
       if (invite.EXPIRA_EM && new Date(invite.EXPIRA_EM).getTime() < deps.now().getTime()) throw membersVinculoError_('CONVITE_AVALIACAO_EXPIRADO', 'Este convite expirou.', {});
       var note = Number(payload && payload.notaGeral); if (note < 1 || note > 5 || Math.floor(note) !== note) throw membersVinculoError_('NOTA_GERAL_INVALIDA', 'Informe uma nota de 1 a 5.', {});
       var responses = deps.openSource('PESSOAS', 'RESPOSTAS_AVALIACAO_EGRESSOS', environment, true);

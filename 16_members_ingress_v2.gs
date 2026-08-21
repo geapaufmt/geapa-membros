@@ -39,6 +39,46 @@ function membersIngressNormalizeRga_(value) {
   if (rga.length < 5 || rga.length > 30) throw membersVinculoError_('RGA_INVALIDO', 'Informe um RGA valido.', {}); return rga;
 }
 
+// Mantem o mesmo formato canonico adotado pelo perfil editavel do Core.
+// A biblioteca Core atualmente consumida por Membros nao expoe estes normalizadores.
+function membersIngressNormalizePhone_(value) {
+  var raw = String(value == null ? '' : value).trim();
+  if (!raw) return '';
+  var digits = raw.replace(/\D+/g, '');
+  if ((digits.length === 12 || digits.length === 13) && digits.indexOf('55') === 0) digits = digits.slice(2);
+  if (digits.length !== 10 && digits.length !== 11) throw membersVinculoError_('TELEFONE_INVALIDO', 'Informe um telefone valido com DDD.', {});
+  if (digits.length === 11 && digits.charAt(2) !== '9') throw membersVinculoError_('TELEFONE_INVALIDO', 'Informe um telefone celular valido com DDD.', {});
+  return '+55' + digits;
+}
+
+function membersIngressNormalizeInstagram_(value) {
+  var text = String(value == null ? '' : value).trim().replace(/^@+/, '').replace(/\s+/g, '');
+  if (!text) return '';
+  if (!/^[A-Za-z0-9._]{1,30}$/.test(text) || /\.\./.test(text)) throw membersVinculoError_('INSTAGRAM_INVALIDO', 'Informe somente o usuario valido do Instagram.', {});
+  return text;
+}
+
+function membersIngressNormalizeBirthDate_(value) {
+  if (value == null || String(value).trim() === '') return '';
+  var parsed = membersVinculoCivilDate_(value, 'DATA_NASCIMENTO_INVALIDA');
+  var today = membersVinculoToday_(new Date());
+  if (parsed.year < 1900 || parsed.iso > today.iso) throw membersVinculoError_('DATA_NASCIMENTO_INVALIDA', 'Informe uma data de nascimento valida.', {});
+  return parsed.iso;
+}
+
+function membersIngressNormalizeComplementary_(value) {
+  var source = value && typeof value === 'object' ? value : {};
+  return {
+    dataNascimento: membersIngressNormalizeBirthDate_(source.dataNascimento || source.DATA_NASCIMENTO),
+    instagram: membersIngressNormalizeInstagram_(source.instagram || source.INSTAGRAM),
+    paisOrigemCodigo: String(source.paisOrigemCodigo || source.PAIS_ORIGEM_CODIGO || '').trim().toUpperCase(),
+    municipioOrigemCodigo: String(source.municipioOrigemCodigo || source.MUNICIPIO_ORIGEM_CODIGO || '').replace(/\D/g, ''),
+    cidadeNatal: String(source.cidadeNatal || source.cidadeOrigem || source.CIDADE_NATAL || '').trim().slice(0, 120),
+    ufOrigem: String(source.ufOrigem || source.UF_ORIGEM || '').trim().toUpperCase(),
+    regiaoOrigem: String(source.regiaoOrigem || source.REGIAO_ORIGEM || '').trim().slice(0, 120)
+  };
+}
+
 function membersIngressNormalizeKey_(value) {
   var key = String(value || '').trim(); if (!/^[A-Za-z0-9._:-]{8,120}$/.test(key)) throw membersVinculoError_('CHAVE_IDEMPOTENCIA_INVALIDA', 'A chave de idempotencia e invalida.', {}); return key;
 }
@@ -72,12 +112,12 @@ function membersIngressValidatePayload_(payload) {
   return {
     chave: membersIngressNormalizeKey_(source.chaveIdempotencia), modalidade: modality, nome: name,
     nomeExibicao: String(source.nomeExibicao || '').trim().slice(0, 100), email: membersIngressNormalizeEmail_(source.emailPrincipal),
-    telefone: String(source.telefone || '').replace(/[^0-9+]/g, '').slice(0, 20), rga: membersIngressNormalizeRga_(source.rga),
+    telefone: membersIngressNormalizePhone_(source.telefone), rga: membersIngressNormalizeRga_(source.rga),
     cursoId: membersVinculoToken_(source.cursoId), cursoNomeOutro: String(source.cursoNomeOutro || '').trim(),
     instituicaoEnsino: String(source.instituicaoEnsino || '').trim(), campus: String(source.campus || '').trim(), nivelCurso: String(source.nivelCurso || '').trim(),
     dataIngresso: date, semestreEntrada: geapaSemester, formaIngresso: ingressForm,
     documentoReferencia: String(source.documentoReferencia || '').trim().slice(0, 300), observacao: String(source.observacaoAdministrativa || '').trim().slice(0, 1500),
-    complementares: source.dadosComplementares && typeof source.dadosComplementares === 'object' ? source.dadosComplementares : {}
+    complementares: membersIngressNormalizeComplementary_(source.dadosComplementares)
   };
 }
 
