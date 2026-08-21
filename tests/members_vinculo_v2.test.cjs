@@ -298,6 +298,7 @@ function ingressPayload(extra = {}) {
     emailPrincipal: 'PESSOA.NOVA@example.invalid', telefone: '(65) 99999-1234',
     rga: '2026.0001', cursoId: 'CURSO-TESTE', dataIngresso: '2026-03-10',
     semestreEntrada: '2026/1', formaIngresso: 'PROCESSO_SELETIVO',
+    origemCadastro: 'SELETIVO_FECHADO', documentoReferencia: 'ATA-PS-2026-01',
     dadosComplementares: { dataNascimento: '13/12/2004', instagram: '@pessoa.nova' }
   }, extra);
 }

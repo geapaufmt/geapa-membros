@@ -2,7 +2,7 @@
   "name": "geapa-membros",
   "private": true,
   "scripts": {
-    "test:vinculo-v2": "node tests/members_vinculo_v2.test.cjs",
+    "test:vinculo-v2": "node tests/members_vinculo_v2.test.cjs && node tests/member_ingress_v2.test.cjs",
     "test": "npm run test:vinculo-v2"
   }
 }
