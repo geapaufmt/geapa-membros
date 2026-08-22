@@ -8,6 +8,7 @@ var MEMBERS_INGRESS_OPEN_STATUSES = Object.freeze([
 var MEMBERS_INGRESS_FORMS = Object.freeze(['PROCESSO_SELETIVO']);
 var MEMBERS_INGRESS_ORIGINS = Object.freeze(['CADASTRO_INTERESSE','CADASTRO_MANUAL','SELETIVO_FECHADO']);
 var MEMBERS_INGRESS_INTEREST_LINKS = Object.freeze(['INTERESSADO_ATIVIDADES','INTERESSADO','ACOMPANHANTE','PARTICIPANTE_EXTERNO']);
+var MEMBERS_INGRESS_REGULAR_PERSON_SEQUENCE_LIMIT = 900000;
 
 function membersIngressFeatureEnabled_(context) {
   var environment = membersVinculoEnvironment_(context || {}); var flags = context && context.featureFlags || {};
@@ -108,6 +109,34 @@ function membersIngressAppend_(source, record) {
 
 function membersIngressFind_(records, field, value) {
   return (records || []).filter(function(row) { return String(row[field] || '').trim().toLowerCase() === String(value || '').trim().toLowerCase(); });
+}
+
+/**
+ * Reserva o proximo ID_PESSOA sequencial no padrao canonico PES-000001.
+ * A chamada ocorre dentro do lock do ingresso e considera a base e a fila para
+ * nao reutilizar um numero reservado por uma execucao parcial.
+ */
+function membersIngressNextPersonId_(sources) {
+  var used = {};
+  var max = 0;
+  var records = []
+    .concat((sources.base && sources.base.records) || [])
+    .concat((sources.queue && sources.queue.records) || []);
+  records.forEach(function(record) {
+    var id = String(record.ID_PESSOA || '').trim().toUpperCase();
+    if (id) used[id] = true;
+    var match = id.match(/^PES-(\d+)$/);
+    if (match && Number(match[1]) < MEMBERS_INGRESS_REGULAR_PERSON_SEQUENCE_LIMIT) {
+      max = Math.max(max, Number(match[1]));
+    }
+  });
+  do {
+    max++;
+    var sequence = String(max);
+    while (sequence.length < 6) sequence = '0' + sequence;
+    var candidate = 'PES-' + sequence;
+  } while (used[candidate]);
+  return candidate;
 }
 
 function membersIngressValidatePayload_(payload) {
@@ -367,7 +396,7 @@ function membersIngressExecute_(payload, contexto) {
       var transition = savedTransition ? membersIngressRestoreTransition_(sources, identity.idPessoa, savedTransition) : liveTransition;
       if (!ingress) {
         var suffix = String(deps.uuid()).replace(/-/g, '').toUpperCase();
-        var idPessoa = identity.idPessoa || 'PES-' + suffix;
+        var idPessoa = identity.idPessoa || membersIngressNextPersonId_(sources);
         var idVinculo = transition.kind === 'ALREADY_INCOMING' ? String(transition.existingLink.ID_VINCULO || '') : 'VIN-' + suffix;
         ingress = membersIngressAppend_(sources.queue, {
           ID_INGRESSO: 'ING-' + suffix, CHAVE_IDEMPOTENCIA: data.chave, STATUS_INGRESSO: 'RECEBIDO', MODALIDADE_CADASTRO: data.modalidade,

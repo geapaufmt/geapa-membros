@@ -100,11 +100,27 @@ test('validacao exige processo seletivo, origem e referencia administrativa', ()
   assert.throws(() => sandbox.membersIngressValidatePayload_(payload({ documentoReferencia: '', observacaoAdministrativa: 'curta' })), (error) => error.code === 'REFERENCIA_ADMISSAO_OBRIGATORIA');
 });
 
+test('novo ID_PESSOA segue a sequencia canonica e ignora IDs UUID legados', () => {
+  assert.equal(sandbox.membersIngressNextPersonId_({
+    base: { records: [
+      { ID_PESSOA: 'PES-000095' },
+      { ID_PESSOA: 'PES-900001' },
+      { ID_PESSOA: 'PES-1E43DB2F938A4C0CAA0C19510892F493' }
+    ] },
+    queue: { records: [] }
+  }), 'PES-000096');
+  assert.equal(sandbox.membersIngressNextPersonId_({
+    base: { records: [{ ID_PESSOA: 'PES-000095' }] },
+    queue: { records: [{ ID_PESSOA: 'PES-000096' }] }
+  }), 'PES-000097');
+});
+
 test('pessoa nova gera vinculo ingressante, evento, resumo e auditoria de origem', () => {
   const h = harness();
   const result = sandbox.membersAdmissaoV2AdmitirIngressante(payload(), h.context);
   assert.equal(result.ok, true);
   assert.equal(h.sources.BASE.records.length, 1);
+  assert.equal(h.sources.BASE.records[0].ID_PESSOA, 'PES-000001');
   assert.equal(h.sources.VINCULOS.records[0].TIPO_VINCULO, 'MEMBRO_INGRESSANTE');
   assert.equal(h.sources.EVENTOS.records[0].TIPO_EVENTO, 'INGRESSO_COMO_MEMBRO_INGRESSANTE');
   assert.match(h.sources.VINCULOS.records[0].OBS_INTERNA, /origemCadastro=SELETIVO_FECHADO/);
