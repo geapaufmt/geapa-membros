@@ -1,12 +1,14 @@
 /** Analise humana, decisao e execucao idempotente das solicitacoes V2. */
 
 function membersVinculoAdminSanitizeList_(request) {
+  var terminal = MEMBERS_VINCULO_CFG.terminalStatuses.indexOf(membersVinculoToken_(request.STATUS_SOLICITACAO)) >= 0;
   return {
     idSolicitacao: request.ID_SOLICITACAO,
     tipo: request.TIPO_SOLICITACAO, modalidade: request.MODALIDADE_SOLICITADA,
     dataSolicitacao: request.DATA_SOLICITACAO, idSemestre: request.ID_SEMESTRE_REFERENCIA,
     status: request.STATUS_SOLICITACAO, resultadoValidacao: request.RESULTADO_VALIDACAO,
-    decisao: request.DECISAO_DIRETORIA || '', atualizadoEm: request.ATUALIZADO_EM || ''
+    decisao: request.DECISAO_DIRETORIA || '', atualizadoEm: request.ATUALIZADO_EM || '',
+    terminal: terminal, acaoDisponivel: terminal ? 'VISUALIZAR' : 'ANALISAR'
   };
 }
 
@@ -59,6 +61,7 @@ function membersAdminSolicitacaoVinculoDetalhe(payload, contexto) {
     var finalRequirements = membersVinculoResolveFinalMinutesRequirement_(request, normativeComparison, null);
     return membersVinculoEnvelopeOk_('SOLICITACAO_VINCULO_ADMIN_DETALHE', 'Detalhe carregado.', {
       solicitacao: copy,
+      somenteLeitura: MEMBERS_VINCULO_CFG.terminalStatuses.indexOf(membersVinculoToken_(request.STATUS_SOLICITACAO)) >= 0,
       pessoa: { nome: String(base.NOME_COMPLETO || base.NOME_EXIBICAO || '').trim(), rgaMascarado: membersVinculoMaskRga_(details.RGA), emailMascarado: membersVinculoMaskEmail_(base.EMAIL_PRINCIPAL || base.EMAIL) },
       vinculo: { idVinculo: link.ID_VINCULO, tipo: link.TIPO_VINCULO, status: link.STATUS_VINCULO, dataInicio: link.DATA_INICIO, ativo: link.ATIVO },
       parametrosNormativos: { snapshot: {
@@ -348,6 +351,9 @@ function membersAdminSolicitacaoVinculoHomologarEfetivarDesligamento(payload, co
         { ATA_REFERENCIA: String(payload.ataReferencia || '').trim(), ID_ATA_DELIBERACAO: String(payload.idAtaDeliberacao || '').trim() }));
       var executed = membersVinculoExecuteEffect_(ctx, request, 'DESLIGAMENTO', Object.assign({}, payload, { dataEfetiva: effective }), deps);
       membersVinculoNotifyOwnerBestEffort_(deps, ctx.queue, executed, ctx.environment, 'DESLIGAMENTO_HOMOLOGADO_EXECUTADO', ctx.actor, ctx.now);
+      if (ctx.environment === 'DEV' && contexto && contexto.featureFlags && contexto.featureFlags.ENABLE_EGRESS_FEEDBACK === true) {
+        membersEgressRegisterInvitationBestEffort_(ctx, executed, deps);
+      }
       return { request: executed, idempotent: false };
     });
     return membersVinculoEnvelopeOk_(result.idempotent ? 'DESLIGAMENTO_JA_EXECUTADO' : 'DESLIGAMENTO_HOMOLOGADO_E_EXECUTADO', result.idempotent ? 'O desligamento ja estava efetivado.' : 'Desligamento homologado por decisao humana e efetivado.', { idSolicitacao: result.request.ID_SOLICITACAO, status: result.request.STATUS_SOLICITACAO, idEvento: result.request.ID_EVENTO_DESLIGAMENTO, idempotente: result.idempotent }, requestId);
